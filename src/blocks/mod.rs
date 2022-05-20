@@ -2,6 +2,7 @@
 //! | Block | Usage | WebAssembly? |
 //! |---|---|---|
 //! | [Apply] | Apply a function to each sample | ✅ |
+//! | [ApplyNM] | ApplyNM a function to each N input samples and produce M output samples | ✅ |
 //! | [Combine] | Apply a function to combine two streams into one | ✅ |
 //! | [Filter] | Apply a function to filter samples | ✅ |
 //!
@@ -21,11 +22,13 @@
 //! | Block | Usage | WebAssembly? |
 //! |---|---|---|
 //! | [FileSource] | Reads samples from a file | ❌ |
+//! | [SoapySink](SoapySinkBuilder) | Transmit samples with a soapy device | ❌ |
 //! | [SoapySource](SoapySourceBuilder) | Read samples from a soapy device | ❌ |
 //! | [Source] | Repeatedly apply a function to generate samples | ✅ |
 //! | [NullSource] | Generates a stream of zeros | ✅ |
 //! | [FileSink] | Writes samples to a file | ❌ |
 //! | [NullSink] | Drops samples | ✅ |
+//! | [TagSink] | Drops samples, printing tags. | ✅ |
 //! | [WavSink] | Writes samples to a WAV file | ❌ |
 //!
 //! ## Message blocks
@@ -35,6 +38,9 @@
 
 mod apply;
 pub use apply::Apply;
+
+mod applynm;
+pub use applynm::ApplyNM;
 
 mod applyintoiter;
 pub use applyintoiter::ApplyIntoIter;
@@ -100,6 +106,10 @@ mod null_source;
 pub use null_source::NullSource;
 
 #[cfg(feature = "soapy")]
+mod soapy_snk;
+#[cfg(feature = "soapy")]
+pub use soapy_snk::{SoapySink, SoapySinkBuilder};
+#[cfg(feature = "soapy")]
 mod soapy_src;
 #[cfg(feature = "soapy")]
 pub use soapy_src::{SoapySource, SoapySourceBuilder};
@@ -108,6 +118,9 @@ mod source;
 pub use source::Source;
 mod split;
 pub use split::Split;
+
+mod tag_debug;
+pub use tag_debug::TagDebug;
 
 #[cfg(not(target_arch = "wasm32"))]
 mod tcp_sink;

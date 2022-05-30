@@ -57,6 +57,7 @@ impl Mac {
             MessageIoBuilder::new()
                 .add_input("rx", Self::received)
                 .add_input("tx", Self::transmit)
+                .add_output("rxed")
                 .build(),
             Mac {
                 tx_frames: VecDeque::new(),
@@ -95,7 +96,7 @@ impl Mac {
 
     fn received<'a>(
         &'a mut self,
-        _mio: &'a mut MessageIo<Mac>,
+        mio: &'a mut MessageIo<Mac>,
         _meta: &'a mut BlockMeta,
         p: Pmt,
     ) -> Pin<Box<dyn Future<Output = Result<Pmt>> + Send + 'a>> {
@@ -106,7 +107,7 @@ impl Mac {
                         info!("received frame, crc correct, payload length {}", data.len());
                         let l = data.len();
                         let s = String::from_iter(
-                            data[7..l - 4]
+                            data[9..l - 2]
                                 .iter()
                                 .map(|x| char::from(*x))
                                 .map(|x| if x.is_ascii() { x } else { '.' })
@@ -119,6 +120,7 @@ impl Mac {
                                 }),
                         );
                         info!("{}", s);
+                        mio.output_mut(0).post(Pmt::Blob(data.clone())).await;
                     } else {
                         info!("crc wrong");
                     }
@@ -206,8 +208,8 @@ impl Kernel for Mac {
                     self.current_len = v.len() + 16;
                     self.current_index = 0;
                     sio.output(0).add_tag(0, Tag::Id(self.current_len as u64));
-                    println!("new frame len {}", self.current_len);
-                    println!("{:?}", &self.current_frame[0..self.current_len]);
+                    info!("sending frame, len {}", self.current_len);
+                    info!("{:?}", &self.current_frame[0..self.current_len]);
                 } else {
                     break;
                 }

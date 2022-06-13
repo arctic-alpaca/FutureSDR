@@ -21,6 +21,7 @@ members = [
     "examples/end-to-end/backend",
     "examples/end-to-end/frontend",
     "examples/end-to-end/node",
+    "examples/end-to-end/recorded",
     "examples/firdes",
     "examples/fm-receiver",
     "examples/logging",

@@ -22,6 +22,7 @@ members = [
     "examples/end-to-end/frontend",
     "examples/end-to-end/node",
     "examples/end-to-end/recorded",
+    "examples/end-to-end/wip",
     "examples/firdes",
     "examples/fm-receiver",
     "examples/logging",
@@ -122,6 +123,7 @@ console_log = "0.2.0"
 cpal = { version = "0.13.4", optional = true, features = ['wasm-bindgen'] }
 futuresdr-frontend = { path = "frontend", version = "0.0.2" }
 getrandom = { version = "0.2.3", features = ["js"] }
+reqwasm = "0.5.0"
 rodio = { version = "0.15.0", default-features = false, optional = true }
 wasm-bindgen = "0.2.79"
 wasm-bindgen-futures = "0.4.28"

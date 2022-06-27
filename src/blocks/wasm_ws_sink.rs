@@ -8,13 +8,11 @@ use crate::runtime::MessageIoBuilder;
 use crate::runtime::StreamIo;
 use crate::runtime::StreamIoBuilder;
 use crate::runtime::WorkIo;
-use futures::lock::Mutex;
 use futures::SinkExt;
-use reqwasm::websocket::futures::WebSocket;
-use reqwasm::websocket::Message;
+use gloo_net::websocket::futures::WebSocket;
+use gloo_net::websocket::Message;
 use std::marker::PhantomData;
 use std::mem::size_of;
-use std::sync::Arc;
 use wasm_bindgen_futures::spawn_local;
 
 // Creating and keeping a WebSocket instance in the WasmWsSink struct didn't work after the first
@@ -59,10 +57,14 @@ impl<T: Send + Sync + 'static> Kernel for WasmWsSink<T> {
 
         let url_clone = self.url.clone();
 
+        // We need spawn_local because WebSocket is !Send and Kernel requires Send.
+        // Forking gloo_net and replacing Rc with Arc and RefCell with Mutex is not a viable option
+        // as more modifications are needed.
         spawn_local(async move {
             let mut x = WebSocket::open(&url_clone).unwrap();
             x.send(Message::Bytes(Vec::from(input))).await.unwrap();
             debug!("WS data sent");
+
             x.close(None, None).unwrap();
             debug!("WS connection closed");
         });

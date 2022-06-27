@@ -5,7 +5,7 @@ use std::pin::Pin;
 use futuresdr::anyhow::Result;
 use futuresdr::async_trait::async_trait;
 use futuresdr::futures::FutureExt;
-use futuresdr::log::{info, warn};
+use futuresdr::log::{debug, warn};
 use futuresdr::runtime::Block;
 use futuresdr::runtime::BlockMeta;
 use futuresdr::runtime::BlockMetaBuilder;
@@ -31,6 +31,8 @@ pub struct Mac {
     sequence_number: u8,
     current_index: usize,
     current_len: usize,
+    n_received: u64,
+    n_sent: u64,
 }
 
 impl Mac {
@@ -57,6 +59,7 @@ impl Mac {
             MessageIoBuilder::new()
                 .add_input("rx", Self::received)
                 .add_input("tx", Self::transmit)
+                .add_input("stats", Self::stats)
                 .add_output("rxed")
                 .build(),
             Mac {
@@ -65,6 +68,8 @@ impl Mac {
                 sequence_number: 0,
                 current_index: 0,
                 current_len: 0,
+                n_received: 0,
+                n_sent: 0,
             },
         )
     }
@@ -103,12 +108,11 @@ impl Mac {
         async move {
             match p {
                 Pmt::Blob(data) => {
-                    if Self::check_crc(&data) {
-                        info!("received frame, crc correct, payload length {}", data.len());
-                        let l = data.len();
+                    if Self::check_crc(&data) && data.len() > 2 {
+                        debug!("received frame, crc correct, payload length {}", data.len());
+                        self.n_received += 1;
                         let s = String::from_iter(
-                            data[9..l - 2]
-                                .iter()
+                            data.iter()
                                 .map(|x| char::from(*x))
                                 .map(|x| if x.is_ascii() { x } else { '.' })
                                 .map(|x| {
@@ -119,10 +123,10 @@ impl Mac {
                                     }
                                 }),
                         );
-                        info!("{}", s);
-                        mio.output_mut(0).post(Pmt::Blob(data.clone())).await;
+                        debug!("{}", s);
+                        mio.output_mut(0).post(Pmt::Blob(data)).await;
                     } else {
-                        info!("crc wrong");
+                        debug!("received frame, crc wrong");
                     }
                 }
                 _ => {
@@ -173,6 +177,15 @@ impl Mac {
         }
         .boxed()
     }
+
+    fn stats<'a>(
+        &'a mut self,
+        _mio: &'a mut MessageIo<Mac>,
+        _meta: &'a mut BlockMeta,
+        _p: Pmt,
+    ) -> Pin<Box<dyn Future<Output = Result<Pmt>> + Send + 'a>> {
+        async move { Ok(Pmt::VecU64(vec![self.n_sent, self.n_received])) }.boxed()
+    }
 }
 
 #[async_trait]
@@ -184,9 +197,12 @@ impl Kernel for Mac {
         _m: &mut MessageIo<Self>,
         _b: &mut BlockMeta,
     ) -> Result<()> {
-        let out = sio.output(0).slice::<u8>();
+        loop {
+            let out = sio.output(0).slice::<u8>();
+            if out.is_empty() {
+                break;
+            }
 
-        while !out.is_empty() {
             if self.current_len == 0 {
                 if let Some(v) = self.tx_frames.pop_front() {
                     self.current_frame[4] = (v.len() + 11) as u8;
@@ -208,8 +224,9 @@ impl Kernel for Mac {
                     self.current_len = v.len() + 16;
                     self.current_index = 0;
                     sio.output(0).add_tag(0, Tag::Id(self.current_len as u64));
-                    info!("sending frame, len {}", self.current_len);
-                    info!("{:?}", &self.current_frame[0..self.current_len]);
+                    debug!("sending frame, len {}", self.current_len);
+                    self.n_sent += 1;
+                    debug!("{:?}", &self.current_frame[0..self.current_len]);
                 } else {
                     break;
                 }

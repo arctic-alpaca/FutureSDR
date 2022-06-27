@@ -3,6 +3,7 @@ name = "futuresdr"
 version = "0.0.19"
 authors = ["FutureSDR Contributors <team@futuresdr.org>"]
 edition = "2021"
+rust-version = "1.60"
 license = "Apache-2.0"
 homepage = "https://www.futuresdr.org"
 repository = "https://github.com/futuresdr/futuresdr/"
@@ -14,50 +15,22 @@ categories = ["asynchronous", "concurrency", "hardware-support", "science", "was
 [workspace]
 members = [
     ".",
-    "examples/android",
-    "examples/android-hw",
-    "examples/audio",
-    "examples/cw",
-    "examples/end-to-end/backend",
-    "examples/end-to-end/frontend",
-    "examples/end-to-end/node",
-    "examples/end-to-end/recorded",
-    "examples/end-to-end/wip",
-    "examples/firdes",
-    "examples/fm-receiver",
-    "examples/logging",
-    "examples/rx-to-file",
-    "examples/spectrum",
-    "examples/wasm",
-    "examples/wgpu",
-    "examples/zeromq",
-    "examples/zigbee",
     "frontend",
     "futuredsp",
-    "perf/buffer_rand",
-    "perf/buffer_size",
-    "perf/fir",
-    "perf/fir_latency",
-    "perf/msg",
-    "perf/null_rand",
-    "perf/null_rand_latency",
-    "perf/vulkan",
-    "perf/wgpu",
-    "perf/zynq",
     "pmt",
 ]
 
 [features]
 default = []
-tpb_scheduler = []
+audio = ["dep:cpal", "dep:hound", "dep:rodio"]
 flow_scheduler = []
-lttng = ["lttng-ust", "lttng-ust-generate"]
-audio = ["cpal", "hound", "rodio"]
-soapy = ["soapysdr"]
-vulkan = ["vulkano", "vulkano-shaders"]
-zynq = ["xilinx-dma"]
-zeromq = ["zmq/vendored"]
-wav = ["hound"]
+lttng = ["dep:lttng-ust", "dep:lttng-ust-generate"]
+soapy = ["dep:soapysdr"]
+tpb_scheduler = []
+vulkan = ["dep:vulkano", "dep:vulkano-shaders"]
+wgpu = ["dep:wgpu"]
+zeromq = ["dep:zmq"]
+zynq = ["dep:xilinx-dma"]
 
 [[bench]]
 name = "flowgraph"
@@ -105,7 +78,6 @@ futures-lite = "1.10.0"
 futuredsp = { path = "futuredsp", version = "0.0.4" }
 futuresdr-pmt = { path = "pmt", version = "0.0.3" }
 log = { version = "0.4", features = ["std", "max_level_debug", "release_max_level_info"] }
-lttng-ust = { version = "0.1.0", optional = true}
 num-complex = "0.4.0"
 num-traits = "0.2"
 num-integer = "0.1"
@@ -149,10 +121,11 @@ tokio = { version = "1.18.2", features = ["rt"] }
 tower-http = { version = "0.3.3", features = ["add-extension", "cors", "fs"] }
 vmcircbuffer = "0.0.9"
 vulkano = { version = "0.29.0", optional = true }
+zmq = { version = "0.9.2", optional = true, features = ["vendored"] }
 vulkano-shaders = { version = "0.29.0", optional = true }
-zmq = { version = "0.9.2", optional = true}
 
-[target.'cfg(unix)'.dependencies]
+[target.'cfg(target_os = "linux")'.dependencies]
+lttng-ust = { git = "https://github.com/sprt/lttng-ust-rs.git", version = "0.1.0", optional = true}
 xilinx-dma = { version = "0.0.7", optional = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
@@ -160,7 +133,9 @@ android_logger = "0.11.0"
 
 [build-dependencies]
 rustc_version = "0.4.0"
-lttng-ust-generate = { version = "0.1.1", optional = true }
+
+[target.'cfg(target_os = "linux")'.build-dependencies]
+lttng-ust-generate = { git = "https://github.com/sprt/lttng-ust-rs.git", version = "0.1.1", optional = true }
 
 [dev-dependencies]
 async-channel = "1.6.1"

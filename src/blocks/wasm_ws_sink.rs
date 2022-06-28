@@ -19,6 +19,8 @@ use wasm_bindgen_futures::spawn_local;
 // send. In combination with the !Send marker in WebSocket (due to Rc<...>), creating a new connection
 // every time we want to send new data is less friction for now.
 
+//TODO: spawn local to handle connection completely, communicate via futures::sync::mpsc::{...}
+
 //TODO: Create data struct and serialize it with bincode (or similar), then send to server and deserialize
 // there.
 pub struct WasmWsSink<T> {
@@ -46,30 +48,48 @@ impl<T: Send + Sync + 'static> WasmWsSink<T> {
 impl<T: Send + Sync + 'static> Kernel for WasmWsSink<T> {
     async fn work(
         &mut self,
-        _io: &mut WorkIo,
+        io: &mut WorkIo,
         sio: &mut StreamIo,
         _mio: &mut MessageIo<Self>,
         _meta: &mut BlockMeta,
     ) -> Result<()> {
-        let input = sio.input(0).slice::<u8>();
-        let x = sio.input(0).slice::<T>();
-        let length = x.len();
+        //let input = sio.input(0).slice::<u8>();
+        //let input2 = sio.input(0).slice::<T>();
+        //let length = input2.len();
 
-        let url_clone = self.url.clone();
+        let i = sio.input(0).slice::<u8>();
+        debug_assert_eq!(i.len() % size_of::<T>(), 0);
+        if i.is_empty() {
+            return Ok(());
+        }
 
-        // We need spawn_local because WebSocket is !Send and Kernel requires Send.
-        // Forking gloo_net and replacing Rc with Arc and RefCell with Mutex is not a viable option
-        // as more modifications are needed.
-        spawn_local(async move {
-            let mut x = WebSocket::open(&url_clone).unwrap();
-            x.send(Message::Bytes(Vec::from(input))).await.unwrap();
-            debug!("WS data sent");
+        if sio.input(0).finished() {
+            io.finished = true;
+        }
 
-            x.close(None, None).unwrap();
-            debug!("WS connection closed");
-        });
+        let mut v = Vec::new();
+        let item_size = size_of::<T>();
+        let items = i.len() / item_size;
+        if 2048 <= items {
+            v.extend_from_slice(&i[0..(2048 * item_size)]);
+            sio.input(0).consume(2048);
+        }
+        if !v.is_empty() {
+            let url_clone = self.url.clone();
 
-        sio.input(0).consume(length);
+            // We need spawn_local because WebSocket is !Send and Kernel requires Send.
+            // Forking gloo_net and replacing Rc with Arc and RefCell with Mutex is not a viable option
+            // as more modifications are needed.
+            spawn_local(async move {
+                let mut x = WebSocket::open(&url_clone).unwrap();
+                x.send(Message::Bytes(v)).await.unwrap();
+                debug!("WS data sent");
+
+                x.close(None, None).unwrap();
+                debug!("WS connection closed");
+            });
+        }
+        //sio.input(0).consume(length);
         Ok(())
     }
 }

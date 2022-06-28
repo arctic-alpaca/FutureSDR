@@ -11,12 +11,12 @@ use axum::{
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::broadcast::{Receiver, Sender};
-use tokio::sync::{broadcast, Mutex, RwLock};
+use tokio::sync::{broadcast, Mutex};
 use tower_http::trace::{DefaultMakeSpan, TraceLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 pub struct State {
-    pub data: Arc<RwLock<Vec<u8>>>,
+    pub data: Arc<Mutex<Option<Vec<u8>>>>,
     pub notifier: Arc<Mutex<Sender<bool>>>,
     pub receiver: Arc<Receiver<bool>>,
 }
@@ -33,7 +33,7 @@ async fn main() {
 
     let (sender, receiver) = broadcast::channel(10);
     let state = Arc::new(State {
-        data: Arc::new(RwLock::new(vec![])),
+        data: Arc::new(Mutex::new(Some(vec![]))),
         notifier: Arc::new(Mutex::new(sender)),
         receiver: Arc::new(receiver),
     });
@@ -80,8 +80,8 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<State>) {
                 }
                 Message::Binary(data) => {
                     {
-                        let mut lock = state.data.write().await;
-                        *lock = data;
+                        let mut lock = state.data.lock().await;
+                        *lock = Some(data);
                     }
                     {
                         let lock = state.notifier.lock().await;
@@ -134,8 +134,8 @@ async fn frontend_handler(
 async fn handle_frontend_socket(mut socket: WebSocket, state: Arc<State>) {
     let mut x = { state.notifier.lock().await.subscribe() };
     while x.recv().await.is_ok() {
-        let data = { state.data.read().await.clone() };
-        if socket.send(Message::Binary(data)).await.is_err() {
+        let data = { state.data.lock().await.take() };
+        if data.is_some() && socket.send(Message::Binary(data.unwrap())).await.is_err() {
             println!("frontend client disconnected");
             return;
         }

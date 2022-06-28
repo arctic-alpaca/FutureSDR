@@ -41,7 +41,7 @@ async fn run() -> Result<()> {
     Ok(())
 }
 
-static RECORDED_I8: &[u8] = include_bytes!("record.raw");
+static RECORDED_I8: &[u8] = include_bytes!("../../record.raw");
 
 #[wasm_bindgen]
 pub struct Data {

@@ -1,8 +1,3 @@
-#[cfg(feature = "vulkan")]
-mod vulkan;
-#[cfg(feature = "vulkan")]
-pub use vulkan::Vulkan;
-
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
 

@@ -98,7 +98,9 @@
             while(true) {
                 await Sleep(5)
                 console.log("one_loop_run");
-                await push_samples(data.read_n(1024 ));
+                let x = await push_samples(data.read_n(1024 * 1024 ));
+                console.log(x);
+                console.log("pushed data");
             }
         }
 

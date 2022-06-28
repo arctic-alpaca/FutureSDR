@@ -6,6 +6,7 @@ use futuresdr::blocks::WasmWsSink;
 use futuresdr::runtime::buffer::slab::Slab;
 use futuresdr::runtime::Flowgraph;
 use futuresdr::runtime::Runtime;
+use log::debug;
 use std::io::Cursor;
 use wasm_bindgen::prelude::*;
 
@@ -49,7 +50,7 @@ pub struct Data {
 }
 #[wasm_bindgen]
 pub async fn setup_logger() {
-    console_log::init_with_level(log::Level::Debug).unwrap();
+    console_log::init_with_level(log::Level::Trace).unwrap();
 }
 
 #[wasm_bindgen]
@@ -60,10 +61,12 @@ impl Data {
         }
     }
 
-    pub fn read_n(&mut self, n: u32) -> Vec<i8> {
-        let mut v = Vec::with_capacity(2048);
+    pub fn read_n(&mut self, n: usize) -> Vec<i8> {
+        let mut v = Vec::with_capacity(n);
+        debug!("{}", self.cursor.position());
         for _ in 0..n {
             if self.cursor.position() >= (RECORDED_I8.len() - 1) as u64 {
+                debug!("resetting position");
                 self.cursor.set_position(0);
             }
             v.push(self.cursor.read_i8().unwrap());

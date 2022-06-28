@@ -53,6 +53,7 @@ impl<T: Send + Sync + 'static> Kernel for WasmWsSink<T> {
         _mio: &mut MessageIo<Self>,
         _meta: &mut BlockMeta,
     ) -> Result<()> {
+        debug!("start wasm_ws_sink");
         //let input = sio.input(0).slice::<u8>();
         //let input2 = sio.input(0).slice::<T>();
         //let length = input2.len();
@@ -90,6 +91,7 @@ impl<T: Send + Sync + 'static> Kernel for WasmWsSink<T> {
             });
         }
         //sio.input(0).consume(length);
+        debug!("end wasm_ws_sink");
         Ok(())
     }
 }

@@ -52,6 +52,7 @@ impl Kernel for Fft {
         let i = unsafe { sio.input(0).slice_mut::<Complex<f32>>() };
         let o = sio.output(0).slice::<Complex<f32>>();
 
+        // take what's smaller, filled input buffer, empty output buffer
         let m = cmp::min(i.len(), o.len());
         let n = (m / 2048) * 2048;
 

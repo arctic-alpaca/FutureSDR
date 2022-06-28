@@ -82,6 +82,9 @@ impl Kernel for WasmSdr {
             self.index = 0;
         }
 
+        // amount of values to be written to output
+        // either remaining samples (divided by two since two input values result in one output value)
+        // or the remaining output buffer space is filled
         let n = std::cmp::min((self.samples.len() - self.index) / 2, output.len());
 
         for (i, o) in output.iter_mut().enumerate().take(n) {

@@ -72,7 +72,7 @@ async fn ws_handler(
 }
 
 async fn handle_socket(mut socket: WebSocket, state: Arc<State>) {
-    if let Some(msg) = socket.recv().await {
+    while let Some(msg) = socket.recv().await {
         if let Ok(msg) = msg {
             match msg {
                 Message::Text(t) => {
@@ -81,6 +81,8 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<State>) {
                 Message::Binary(data) => {
                     {
                         let mut lock = state.data.lock().await;
+                        println!("data: {:?}", &data);
+                        println!("data.len(): {:?}", data.len());
                         *lock = Some(data);
                     }
                     {
@@ -104,18 +106,6 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<State>) {
             println!("node client disconnected");
             return;
         }
-    }
-
-    loop {
-        if socket
-            .send(Message::Text(String::from("Hi!")))
-            .await
-            .is_err()
-        {
-            println!("node client disconnected");
-            return;
-        }
-        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
     }
 }
 

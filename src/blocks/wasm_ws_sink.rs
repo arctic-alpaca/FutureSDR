@@ -15,14 +15,9 @@ use std::marker::PhantomData;
 use std::mem::size_of;
 use wasm_bindgen_futures::spawn_local;
 
-// Creating and keeping a WebSocket instance in the WasmWsSink struct didn't work after the first
-// send. In combination with the !Send marker in WebSocket (due to Rc<...>), creating a new connection
-// every time we want to send new data is less friction for now.
-
 //TODO: Create data struct and serialize it with bincode (or similar), then send to server and deserialize
 // there.
 pub struct WasmWsSink<T> {
-    url: String,
     data_sender: channel::mpsc::Sender<(Vec<u8>, channel::oneshot::Sender<bool>)>,
     _p: PhantomData<T>,
 }
@@ -30,11 +25,10 @@ pub struct WasmWsSink<T> {
 impl<T: Send + Sync + 'static> WasmWsSink<T> {
     pub fn new(url: String) -> Block {
         let (sender, mut receiver) =
-            channel::mpsc::channel::<(Vec<u8>, channel::oneshot::Sender<bool>)>(1);
+            channel::mpsc::channel::<(Vec<u8>, channel::oneshot::Sender<bool>)>(10);
 
-        let url_clone = url.clone();
         spawn_local(async move {
-            let mut conn = WebSocket::open(&url_clone).unwrap();
+            let mut conn = WebSocket::open(&url).unwrap();
             while let Some((v, sender)) = receiver.next().await {
                 if let Err(e) = conn.send(Message::Bytes(v)).await {
                     debug!("{}", e);
@@ -53,7 +47,6 @@ impl<T: Send + Sync + 'static> WasmWsSink<T> {
                 .build(),
             MessageIoBuilder::<Self>::new().build(),
             WasmWsSink {
-                url,
                 data_sender: sender,
                 _p: PhantomData,
             },
@@ -70,13 +63,9 @@ impl<T: Send + Sync + 'static> Kernel for WasmWsSink<T> {
         _mio: &mut MessageIo<Self>,
         _meta: &mut BlockMeta,
     ) -> Result<()> {
-        debug!("start wasm_ws_sink");
-        //let input = sio.input(0).slice::<u8>();
-        //let input2 = sio.input(0).slice::<T>();
-        //let length = input2.len();
-
         let i = sio.input(0).slice::<u8>();
         debug_assert_eq!(i.len() % size_of::<T>(), 0);
+
         if i.is_empty() {
             return Ok(());
         }
@@ -92,30 +81,19 @@ impl<T: Send + Sync + 'static> Kernel for WasmWsSink<T> {
             v.extend_from_slice(&i[0..(2048 * item_size)]);
             sio.input(0).consume(2048);
         }
+
+        if (items - 2048) >= 2048 {
+            io.call_again = true;
+        }
         if !v.is_empty() {
             let (sender, receiver) = channel::oneshot::channel::<bool>();
             if let Err(e) = self.data_sender.send((v, sender)).await {
                 debug!("{}", e);
             }
+            // wait till sending is done
             receiver.await.unwrap();
-            //let url_clone = self.url.clone();
-
-            // We need spawn_local because WebSocket is !Send and Kernel requires Send.
-            // Forking gloo_net and replacing Rc with Arc and RefCell with Mutex is not a viable option
-            // as more modifications are needed.
-
-            /*
-            spawn_local(async move {
-                let mut x = WebSocket::open(&url_clone).unwrap();
-                x.send(Message::Bytes(v)).await.unwrap();
-                debug!("WS data sent");
-
-                x.close(None, None).unwrap();
-                debug!("WS connection closed");
-            });*/
         }
-        //sio.input(0).consume(length);
-        debug!("end wasm_ws_sink");
+
         Ok(())
     }
 }

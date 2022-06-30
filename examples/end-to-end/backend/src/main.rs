@@ -41,7 +41,7 @@ async fn main() {
     let app = Router::new()
         // routes are matched from bottom to top, so we have to put `nest` at the
         // top since it matches all routes
-        .route("/ws", get(ws_handler))
+        .route("/node", get(ws_handler))
         .route("/frontend", get(frontend_handler))
         // logging so we can see whats going on
         .layer(Extension(state))
@@ -62,11 +62,8 @@ async fn main() {
 async fn ws_handler(
     Extension(state): Extension<Arc<State>>,
     ws: WebSocketUpgrade,
-    user_agent: Option<TypedHeader<headers::UserAgent>>,
 ) -> impl IntoResponse {
-    if let Some(TypedHeader(user_agent)) = user_agent {
-        println!("`{}` connected", user_agent.as_str());
-    }
+    println!("node connected");
 
     ws.on_upgrade(|socket| handle_socket(socket, state))
 }
@@ -81,15 +78,13 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<State>) {
                 Message::Binary(data) => {
                     {
                         let mut lock = state.data.lock().await;
-                        println!("data: {:?}", &data);
-                        println!("data.len(): {:?}", data.len());
                         *lock = Some(data);
                     }
                     {
                         let lock = state.notifier.lock().await;
                         lock.send(true).unwrap();
                     }
-                    println!("node client sent binary data");
+                    //println!("node sent data");
                 }
                 Message::Ping(_) => {
                     println!("node socket ping");
@@ -112,18 +107,15 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<State>) {
 async fn frontend_handler(
     Extension(state): Extension<Arc<State>>,
     ws: WebSocketUpgrade,
-    user_agent: Option<TypedHeader<headers::UserAgent>>,
 ) -> impl IntoResponse {
-    if let Some(TypedHeader(user_agent)) = user_agent {
-        println!("`{}` connected", user_agent.as_str());
-    }
-
+    println!("frontend connected");
     ws.on_upgrade(|socket| handle_frontend_socket(socket, state))
 }
 
 async fn handle_frontend_socket(mut socket: WebSocket, state: Arc<State>) {
     let mut x = { state.notifier.lock().await.subscribe() };
     while x.recv().await.is_ok() {
+        //println!("sending to frontend");
         let data = { state.data.lock().await.take() };
         if data.is_some() && socket.send(Message::Binary(data.unwrap())).await.is_err() {
             println!("frontend client disconnected");

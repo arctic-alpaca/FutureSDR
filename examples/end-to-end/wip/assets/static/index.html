@@ -2,7 +2,7 @@
 <html lang="en">
     <head>
         <meta charset="utf-8">
-        <title>FutureSDR WASM Example</title>
+        <title>FutureSDR End-to-End, Node Example</title>
         <link rel="stylesheet" href="/css/futuresdr.css">
         <link rel="shortcut icon" href="/favicon.png">
         <style>
@@ -42,49 +42,7 @@
         </style>
     </head>
     <body>
-        <div id="freq"></div>
-        <input type="range" value="42" min="800000000" max="900000000" step="1000000" onchange="update_slider(this.value)" />
-        <span id="freq_text">asdf</span>
-
-        <script type="text/javascript">
-
-        var samples = new Float32Array(2048);
-
-        function update_slider(f) {
-            let i = parseInt(f, 10);
-            console.log("setting freq " + i/1000000)
-            set_freq(i);
-        }
-        function set_freq(f) {
-            console.log("set_freq" +f)
-        }
-
-        function put_samples(s) {
-            console.log("putting samples");
-            samples = s;
-        }
-
-        function get_samples() {
-            //console.log("get_samples");
-            return samples;
-        }
-        </script>
-
-
-        <script type="module">
-            /*
-        import init, {add_freq} from "./futuresdr.js"
-
-        const runWasm = async () => {
-            const rustWasm = await init();
-            add_freq('#freq', '', -30, 10);
-        };
-
-        runWasm();
-        */
-
-        </script>
-
+        <button id="start_button">Start!</button>
 
         <script type="module">
         import init, {run_fg, push_samples, Data, setup_logger} from "./wip.js";
@@ -105,24 +63,13 @@
         }
 
         const runWasm = async () => {
-            //await Sleep(5000);
-
             const rustWasm = await init();
             await setup_logger();
             await Promise.all([run_fg(), push()]);
         };
-
-        function waitForElement(){
-            if(typeof get_samples === 'function') {
-                console.log("present, loading");
-                runWasm();
-            } else {
-                console.log("not present, waiting");
-                setTimeout(waitForElement, 250);
-            }
-        }
-        waitForElement();
-
+        document.getElementById("start_button").addEventListener("click", () => {
+            runWasm();
+        });
         </script>
     </body>
 </html>

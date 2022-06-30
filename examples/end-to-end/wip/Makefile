@@ -12,6 +12,12 @@ wasm-profiling:
 	./gulp
 	cd dist && ../serve.py
 
+wasm-release:
+	RUSTFLAGS='-C target-cpu=generic --cfg=web_sys_unstable_apis' wasm-pack build --target web --out-name wip --out-dir ./dist --release -- --features=wgpu
+	#cd ../../../frontend && make wasm-profiling && ./gulp
+	./gulp
+	cd dist && ../serve.py
+
 
 serve:
 	cd dist && ../serve.py

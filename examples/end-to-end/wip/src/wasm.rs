@@ -29,7 +29,9 @@ async fn run() -> Result<()> {
     let log = fg.add_block(lin2db_block());
     let shift = fg.add_block(FftShift::<f32>::new());
     let keep = fg.add_block(Keep1InN::new(0.1, 40));
-    let snk = fg.add_block(WasmWsSink::<f32>::new("ws://127.0.0.1:3000/ws".to_owned()));
+    let snk = fg.add_block(WasmWsSink::<f32>::new(
+        "ws://127.0.0.1:3000/node".to_owned(),
+    ));
 
     fg.connect_stream_with_type(src, "out", fft, "in", Slab::with_config(65536, 2, 0))?;
     fg.connect_stream_with_type(fft, "out", power, "in", Slab::with_config(65536, 2, 0))?;
@@ -55,22 +57,28 @@ pub async fn setup_logger() {
 
 #[wasm_bindgen]
 impl Data {
-    pub fn new() -> Data {
-        Data {
-            cursor: Cursor::new(RECORDED_I8),
-        }
+    pub fn new() -> Self {
+        Data::default()
     }
 
     pub fn read_n(&mut self, n: usize) -> Vec<i8> {
-        let mut v = Vec::with_capacity(n);
+        let mut data_vector = Vec::with_capacity(n);
         debug!("{}", self.cursor.position());
         for _ in 0..n {
             if self.cursor.position() >= (RECORDED_I8.len() - 1) as u64 {
                 debug!("resetting position");
                 self.cursor.set_position(0);
             }
-            v.push(self.cursor.read_i8().unwrap());
+            data_vector.push(self.cursor.read_i8().unwrap());
         }
-        v
+        data_vector
+    }
+}
+
+impl Default for Data {
+    fn default() -> Self {
+        Data {
+            cursor: Cursor::new(RECORDED_I8),
+        }
     }
 }

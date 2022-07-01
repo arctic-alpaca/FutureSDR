@@ -1,5 +1,5 @@
 # FutureSDR End-to-End Example
-This example showcases a node processing sdr-data via FutureSDR, then sending it to a backend. The backend serves 
+This example showcases a node processing SDR-data via FutureSDR, then sending it to a backend. The backend serves
 all css/html/js/wasm files needed and relays data coming from the node to one connected frontend. The frontend
 visualizes incoming data. A PostgreSQL database is started in a container and the backend stores incoming node
 data in it.
@@ -11,6 +11,7 @@ data in it.
 * psql
 * sqlx CLI
 * make
+* The HackRF node requires a connected HackRF SDR.
 
 ## Usage
 Run `npm install` once in the [hackrf-node](hackrf-node) and the [recorded-node](recorded-node) directory.

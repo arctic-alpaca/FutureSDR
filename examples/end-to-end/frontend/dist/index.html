@@ -2,7 +2,7 @@
 <html lang="en">
     <head>
         <meta charset="utf-8">
-        <title>FutureSDR WASM Example</title>
+        <title>FutureSDR End-To-End Frontend</title>
         <link rel="stylesheet" href="/css/futuresdr.css">
         <link rel="shortcut icon" href="/favicon.png">
         <style>
@@ -42,44 +42,23 @@
         </style>
     </head>
     <body>
-        <div class="flex-container">
-            <div class="flex-item">
-                <button id="start" type="button" value="Start">
-                    Start
-                </button>
-            </div>
-        </div>
         <div id="freq"></div>
-
 
         <script type="module">
          import init, {add_freq} from "./futuresdr.js";
-         //import second_init, {return_get_samples} from "./frontend.js";
-
 
          function Sleep(milliseconds) {
              return new Promise(resolve => setTimeout(resolve, milliseconds));
          }
 
-
-
-         /*window.get_samples = function get_samples() {
-            return return_get_samples();
-         }*/
-
          const runWasm = async () => {
              await Sleep(500);
-             //const something = await second_init();
-             //get_samples();
              const rustWasm = await init();
-             add_freq('#freq', 'ws://localhost:3000/frontend', -20, 10);
+             add_freq('#freq', 'ws://localhost:3000/ws/frontend', -20, 10);
          };
 
          runWasm();
+
         </script>
-
-
-
-
     </body>
 </html>

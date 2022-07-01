@@ -14,8 +14,8 @@ end-to-end:
 	# building in a temporary directory and moving to the dist directory is required since wasm-opt fails when trying to optimize "hackrf_open.wasm"
 	cd ../hackrf-node && \
 		RUSTFLAGS='-C target-cpu=generic --cfg=web_sys_unstable_apis' wasm-pack build --target web --out-name hackrf_node --out-dir ./dist-tmp --release && \
-		mv ./dist-tmp/* ./dist && \
 		./gulp && \
+		mv ./dist-tmp/* ./dist && \
 		cp -r ./dist/* ../backend/serve/hackrf_node
 	cd ../recorded-node && \
 		RUSTFLAGS='-C target-cpu=generic --cfg=web_sys_unstable_apis' wasm-pack build --target web --out-name recorded_node --out-dir ./dist --release && \

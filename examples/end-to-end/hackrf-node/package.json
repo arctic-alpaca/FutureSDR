@@ -1,7 +1,7 @@
 {
-  "name": "futuresdr-wasn",
+  "name": "hackrf_node",
   "version": "0.0.1",
-  "description": "FutureSDR WASM Example",
+  "description": "FutureSDR End-To-End HackRF Node Example",
   "browserslist": [
     "defaults"
   ],

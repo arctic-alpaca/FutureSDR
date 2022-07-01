@@ -30,7 +30,7 @@ async fn run() -> Result<()> {
     let shift = fg.add_block(FftShift::<f32>::new());
     let keep = fg.add_block(Keep1InN::new(0.1, 40));
     let snk = fg.add_block(WasmWsSink::<f32>::new(
-        "ws://127.0.0.1:3000/node".to_owned(),
+        "ws://127.0.0.1:3000/ws/node".to_owned(),
     ));
 
     fg.connect_stream_with_type(src, "out", fft, "in", Slab::with_config(65536, 2, 0))?;

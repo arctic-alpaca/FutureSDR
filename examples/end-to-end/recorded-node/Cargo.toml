@@ -1,5 +1,5 @@
 [package]
-name = "wip"
+name = "recorded_node"
 version = "0.1.0"
 edition = "2021"
 
@@ -10,11 +10,6 @@ crate-type = ["cdylib", "rlib"]
 
 [build]
 target = "wasm32-unknown-unknown"
-
-[features]
-default = []
-
-wgpu = [ "futuresdr/wgpu" ]
 
 [dependencies]
 log = "0.4.17"

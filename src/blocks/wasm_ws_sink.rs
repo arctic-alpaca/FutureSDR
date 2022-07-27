@@ -15,8 +15,6 @@ use std::marker::PhantomData;
 use std::mem::size_of;
 use wasm_bindgen_futures::spawn_local;
 
-//TODO: Create data struct and serialize it with bincode (or similar), then send to server and deserialize
-// there.
 pub struct WasmWsSink<T> {
     data_sender: channel::mpsc::Sender<(Vec<u8>, channel::oneshot::Sender<bool>)>,
     _p: PhantomData<T>,

@@ -9,3 +9,5 @@ examples/end-to-end/node/.idea/
 
 .idea/
 
+
+examples/end-to-end/hackrf-node-webworker/dist/

@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>FutureSDR End-To-End HackRf-Node</title>
+    <link rel="stylesheet" href="/css/futuresdr.css">
+    <link rel="shortcut icon" href="/favicon.png">
+    <style>
+        body {
+            font-family: arial;
+            margin: 0;
+            padding: none;
+            background-color: black;
+        }
+        canvas {
+            width: 80vw;
+            height: 80vh;
+        }
+
+        .flex-container {
+            height: 100%;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+        }
+        .flex-item {
+            line-height: 20px;
+            color: white;
+            font-weight: bold;
+            font-size: 2em;
+            text-align: center;
+            display: flex-item;
+            margin: 5px;
+        }
+        .white_text {
+            color: white;
+            font-size: 14px;
+        }
+
+        #start {
+            margin: 0;
+            padding: 20px;
+        }
+    </style>
+</head>
+<body>
+<div class="flex-container">
+    <div class="flex-item">
+        <button id="start" type="button" value="Start">
+            Start
+        </button>
+    </div>
+</div>
+<div id="freq"></div>
+<input type="range" value="42" min="800000000" max="900000000" step="1000000" onchange="update_slider(this.value)" />
+<div id="node_id_form">
+    <form>
+        <label class="white_text" for="node_id">Please insert a Node ID if available. Needs to be a Uuid v4, no checking is done at this point, the application will fail if this is incorrect. If no ID is set, the server will assign you one. Please see the developer console.:</label><br>
+        <input type="text" id="node_id" name="node_id" size="30"><br>
+        <input type="button" id="node_id_submit" name="node_id_submit" value="Set Node ID" onclick="process_node_id(node_id.value)">
+        <input type="button" id="node_id_generate" name="node_id_generate" value="Generate new Node ID" onclick="generate_node_id()">
+    </form>
+    <div class="white_text" id="status">Please see the developer console output for information about the current status.</div>
+</div>
+
+<script type="text/javascript">
+    var Module = {
+        preRun: [],
+        postRun: [],
+        print: (function() {
+            return function(text) {
+                if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
+                console.log(text);
+            };
+        })(),
+        printErr: function(text) {
+            if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
+            console.error(text);
+        },
+        setStatus: function(text) {
+            if (!Module.setStatus.last) Module.setStatus.last = { time: Date.now(), text: '' };
+            if (text === Module.setStatus.last.text) return;
+            var m = text.match(/([^(]+)\((\d+(\.\d+)?)\/(\d+)\)/);
+            var now = Date.now();
+            if (m && now - Module.setStatus.last.time < 30) return; // if this is a progress update, skip it if too soon
+            Module.setStatus.last.time = now;
+            Module.setStatus.last.text = text;
+            if (m) {
+                text = m[1];
+            }
+            console.log(text);
+        },
+        totalDependencies: 0,
+        monitorRunDependencies: function(left) {
+            this.totalDependencies = Math.max(this.totalDependencies, left);
+            Module.setStatus(left ? 'Preparing... (' + (this.totalDependencies-left) + '/' + this.totalDependencies + ')' : 'All downloads complete.');
+        }
+    };
+
+    Module.setStatus('Downloading...');
+
+    var read_samples;
+    var set_freq;
+    var set_amp;
+    var set_lna;
+    var set_vga;
+    var set_sample_rate;
+    var new_freq = false;
+    var freq = 0;
+
+
+    Module['onRuntimeInitialized'] = function() {
+        console.log("EMSCRIPTEN LOADED");
+        read_samples = Module.read_samples;
+        set_freq = Module.set_freq;
+        set_amp = Module.set_amp;
+        set_lna = Module.set_lna;
+        set_vga = Module.set_vga;
+        set_sample_rate = Module.set_sample_rate;
+        console.log(Module);
+    }
+
+    function update_slider(f) {
+        let i = parseInt(f, 10);
+        console.log("setting freq " + i/1000000)
+        new_freq = true;
+        freq = i;
+    }
+
+    function process_node_id(node_id) {
+        console.log("Node ID set to: " + node_id);
+        document.cookie = "node_id=" + node_id + "; expires=Thu, 31 Dec 2100 12:00:00 UTC";
+    }
+
+    var myLink = document.getElementById('start');
+    myLink.onclick = function() {
+        check_node_id_and_set_if_not_present();
+        var script = document.createElement("script");
+        script.type = "text/javascript";
+        script.src = "hackrf_open.js";
+        document.getElementsByTagName("head")[0].appendChild(script);
+        return false;
+    }
+    const wasm_module_functions = {};
+
+    function generate_node_id() {
+        if(typeof wasm_module_functions.generate_uuid === 'function') {
+            let node_id = wasm_module_functions.generate_uuid();
+            console.log("Generated Node ID: " + node_id);
+            document.getElementById("node_id").value = node_id;
+            process_node_id(node_id);
+        } else {
+            console.log("Not loaded yet, please try again in a moment");
+        }
+    }
+
+    function check_node_id_cookie_and_set_if_present() {
+        let cookie_name = document.cookie.split("=")[0];
+        let cookie_value = document.cookie.split("=")[1];
+        if (cookie_name === "node_id") {
+            console.log("Found existing Node ID: " + cookie_value);
+            document.getElementById("node_id").value = cookie_value;
+        }
+    }
+
+    function check_node_id_and_set_if_not_present() {
+        let cookie_name = document.cookie.split("=")[0];
+        let cookie_value = document.cookie.split("=")[1];
+        if (cookie_name !== "node_id") {
+            console.log("No Node ID set, generating and setting one");
+            generate_node_id();
+        }
+    }
+
+    check_node_id_cookie_and_set_if_present();
+
+</script>
+
+
+
+<script type="module">
+    import init, {input_samples, create_bridges, new_uuid} from "./hackrf_node_webworker.js"
+
+    function generate_uuid() {
+        return new_uuid()
+    }
+
+    function Sleep(milliseconds) {
+        return new Promise(resolve => setTimeout(resolve, milliseconds));
+    }
+
+    async function push() {
+        while(true) {
+            let s = read_samples();
+            if(s.length > 0) {
+                await input_samples(s.slice(0, 2048 * 2 * 80));
+            } else {
+                console.log("sleeping, no samples");
+                await Sleep(200);
+            }
+        }
+    }
+
+    const runWasm = async () => {
+        await Promise.all([push()]);
+    };
+
+    function waitForElement(){
+        if(typeof read_samples === 'function') {
+            console.log("present, loading");
+            runWasm();
+        } else {
+            console.log("not present, waiting");
+            setTimeout(waitForElement, 250);
+        }
+    }
+    const rustWasm = await init();
+    wasm_module_functions.generate_uuid = generate_uuid;
+    await create_bridges();
+    waitForElement();
+
+</script>
+</body>
+</html>

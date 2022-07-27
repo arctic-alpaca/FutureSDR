@@ -7,11 +7,19 @@ edition = "2021"
 
 [dependencies]
 axum = {version = "0.5.7", features = ["ws", "headers"]}
+axum-macros = "0.2"
 headers = "0.3"
+serde = {version ="1.0", features = ["derive"]}
+serde_with = "2.0.0-rc.0"
 tokio = { version = "1.0", features = ["full"] }
+tokio-util = {version = "0.7.3", features = ["io"]}
+tower = {version = "0.4"}
+tower-cookies = "0.7.0"
 tower-http = { version = "0.3", features = ["fs", "trace", "cors", "set-header"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = {version = "1.1", features = ["v4", "serde"]}
+
 
 [dependencies.sqlx]
 version = "0.6.0"

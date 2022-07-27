@@ -1,4 +1,6 @@
+use axum::extract::Path;
 use axum::http::{HeaderValue, StatusCode};
+use axum::response::Redirect;
 use axum::routing::get_service;
 use axum::{
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
@@ -6,13 +8,17 @@ use axum::{
     routing::get,
     Extension, Router,
 };
+use serde::Deserialize;
+use serde::Serialize;
 use sqlx::PgPool;
+use std::collections::HashMap;
 use std::io;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
-use tokio::sync::broadcast::{Receiver, Sender};
+use tokio::sync::broadcast::Sender;
 use tokio::sync::{broadcast, Mutex};
+use tower_cookies::{CookieManagerLayer, Cookies};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 use tower_http::set_header::SetResponseHeaderLayer;
@@ -23,22 +29,59 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 #[derive(Debug)]
 pub struct State {
     pub db_pool: PgPool,
-    pub data: Arc<Mutex<Option<Vec<u8>>>>,
-    pub notifier: Arc<Mutex<Sender<bool>>>,
-    pub receiver: Arc<Receiver<bool>>,
+    pub nodes: Arc<Mutex<HashMap<NodeId, NodeState>>>,
+}
+
+pub enum NodeControlMsg {
+    ChangeDataType { data_type: DataTypeMarker },
+    AnnounceId { node_id: NodeId },
+}
+
+/// Used to mark what kind of data a node does or should produce. Also used in path parameter for node and frontend.
+#[derive(Debug, Deserialize, Serialize, Hash, Eq, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum DataTypeMarker {
+    Fft,
+    ZigBee,
+}
+
+type NodeId = uuid::Uuid;
+
+#[derive(Debug)]
+pub struct NodeState {
+    pub data_streams: Arc<Mutex<HashMap<DataTypeMarker, Sender<Vec<u8>>>>>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Default)]
+#[allow(dead_code)]
+struct SdrParamter {
+    #[serde(default)]
+    freq: Option<u32>,
+    #[serde(default)]
+    amp: Option<u32>,
+    #[serde(default)]
+    lna: Option<u32>,
+    #[serde(default)]
+    vga: Option<u32>,
+    #[serde(default)]
+    sample_rate: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct FrontendPathParameter {
+    node_id: NodeId,
+    mode: DataTypeMarker,
 }
 
 #[tokio::main]
 async fn main() {
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(
-            std::env::var("RUST_LOG")
-                .unwrap_or_else(|_| "end_to_end_backend=debug,tower_http=debug".into()),
+            std::env::var("RUST_LOG").unwrap_or_else(|_| "backend=trace,tower_http=trace".into()),
         ))
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let (sender, receiver) = broadcast::channel(10);
     let db_pool = PgPool::connect("postgres://postgres:password@localhost:5432/backend")
         .await
         .expect("Failed to create database connection");
@@ -50,9 +93,7 @@ async fn main() {
 
     let state = Arc::new(State {
         db_pool,
-        data: Arc::new(Mutex::new(Some(vec![]))),
-        notifier: Arc::new(Mutex::new(sender)),
-        receiver: Arc::new(receiver),
+        nodes: Arc::new(Mutex::new(HashMap::new())),
     });
 
     let cors = CorsLayer::new().allow_origin(Any);
@@ -68,13 +109,20 @@ async fn main() {
     let file_server_service = ServeDir::new("serve");
 
     let app = Router::new()
-        .route("/ws/node", get(ws_handler))
+        .route("/node/data/:data_type", get(node_data_ws_handler))
         .route("/ws/frontend", get(frontend_handler))
+        .route(
+            "/frontend_api/:node_id",
+            get(|Path(node_id): Path<NodeId>| async move {
+                Redirect::permanent(&format!("/frontend_api/{node_id}/fft"))
+            }),
+        )
         .fallback(get_service(file_server_service).handle_error(handle_file_serve_error))
         .layer(Extension(state))
         .layer(cors)
         .layer(coep_header)
         .layer(coop_header)
+        .layer(CookieManagerLayer::new())
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(DefaultMakeSpan::default().include_headers(true)),
@@ -93,15 +141,53 @@ async fn handle_file_serve_error(err: io::Error) -> impl IntoResponse {
     (StatusCode::INTERNAL_SERVER_ERROR, "Failure to serve file")
 }
 
-async fn ws_handler(
+async fn node_data_ws_handler(
     Extension(state): Extension<Arc<State>>,
+    Path(data_type): Path<DataTypeMarker>,
+    cookies: Cookies,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
     debug!("node connected");
-    ws.on_upgrade(|socket| handle_socket(socket, state))
+    debug!(?data_type);
+    debug!(?cookies);
+    if let Some(node_id) = cookies.get("node_id") {
+        debug!("Found cookie: {}", node_id);
+        let uuid = uuid::Uuid::from_str(node_id.value()).unwrap();
+        debug!(?uuid);
+    } else {
+        // TODO: Reject
+    }
+    let node_id = uuid::Uuid::from_str(cookies.get("node_id").unwrap().value()).unwrap();
+    ws.on_upgrade(move |socket| handle_node_data_ws(socket, node_id, data_type, state))
 }
 
-async fn handle_socket(mut socket: WebSocket, state: Arc<State>) {
+async fn handle_node_data_ws(
+    mut socket: WebSocket,
+    node_id: NodeId,
+    data_type: DataTypeMarker,
+    state: Arc<State>,
+) {
+    let sender: Sender<Vec<u8>>;
+    {
+        let mut state_lock = state.nodes.lock().await;
+        if let std::collections::hash_map::Entry::Vacant(e) = state_lock.entry(node_id) {
+            let (sender1, _) = broadcast::channel(10);
+            sender = sender1.clone();
+            let mut hm = HashMap::new();
+
+            hm.insert(data_type, sender1);
+
+            e.insert(NodeState {
+                data_streams: Arc::new(Mutex::new(hm)),
+            });
+        } else {
+            let mut data_streams_lock = state_lock.get(&node_id).unwrap().data_streams.lock().await;
+            let (sender1, _) = broadcast::channel(10);
+            sender = sender1.clone();
+            data_streams_lock.insert(data_type, sender1);
+        }
+    }
+    let mut counter = 0;
     while let Some(msg) = socket.recv().await {
         if let Ok(msg) = msg {
             match msg {
@@ -110,18 +196,22 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<State>) {
                 }
                 Message::Binary(data) => {
                     {
-                        let mut lock = state.data.lock().await;
                         sqlx::query!("INSERT INTO data_storage (data) VALUES ($1)", data)
                             .execute(&state.db_pool)
                             .await
                             .expect("Failed to insert data into database");
-                        *lock = Some(data);
                     }
                     {
-                        let lock = state.notifier.lock().await;
-                        lock.send(true).unwrap();
+                        if sender.receiver_count() >= 1 {
+                            sender.send(data).unwrap();
+                        }
                     }
-                    debug!("node sent data");
+                    //TODO Debug, remove
+                    counter += 1;
+                    if counter >= 100 {
+                        debug!("node sent data");
+                        counter = 0;
+                    }
                 }
                 Message::Ping(_) => {
                     debug!("node socket ping");
@@ -150,10 +240,24 @@ async fn frontend_handler(
 }
 
 async fn handle_frontend_socket(mut socket: WebSocket, state: Arc<State>) {
-    let mut x = { state.notifier.lock().await.subscribe() };
-    while x.recv().await.is_ok() {
-        let data = { state.data.lock().await.take() };
-        if data.is_some() && socket.send(Message::Binary(data.unwrap())).await.is_err() {
+    let mut x = {
+        state
+            .nodes
+            .lock()
+            .await
+            .values()
+            .next()
+            .unwrap()
+            .data_streams
+            .lock()
+            .await
+            .values()
+            .next()
+            .unwrap()
+            .subscribe()
+    };
+    while let Ok(data) = x.recv().await {
+        if socket.send(Message::Binary(data)).await.is_err() {
             debug!("frontend client disconnected");
             return;
         }

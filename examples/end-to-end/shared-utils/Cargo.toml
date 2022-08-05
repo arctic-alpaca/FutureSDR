@@ -1,0 +1,18 @@
+[package]
+name = "shared-utils"
+version = "0.1.0"
+authors = ["arctic-alpaca <67190338+arctic-alpaca@users.noreply.github.com>"]
+edition = "2021"
+
+[workspace]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+
+[dependencies]
+wasm-bindgen = "0.2.79"
+wasm-bindgen-futures = "0.4.28"
+gloo-worker = "0.2.0"
+serde = "1.0"
+serde-wasm-bindgen = "0.4.3"

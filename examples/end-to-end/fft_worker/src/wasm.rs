@@ -1,22 +1,24 @@
 use futuresdr::anyhow::Result;
+use futuresdr::blocks::Apply;
 use futuresdr::blocks::Fft;
 use futuresdr::blocks::WasmSdr;
 use futuresdr::blocks::WasmWsSink;
+use futuresdr::num_complex::Complex32;
 use futuresdr::runtime::buffer::slab::Slab;
+use futuresdr::runtime::Block;
 use futuresdr::runtime::Flowgraph;
 use futuresdr::runtime::Runtime;
-use wasm_bindgen::prelude::*;
 
-use crate::lin2db_block;
-use crate::power_block;
-use crate::FftShift;
+use crate::fft_shift::FftShift;
 
-#[wasm_bindgen]
-pub async fn run_fg() {
-    run().await.unwrap();
+pub fn lin2db_block() -> Block {
+    Apply::new(|x: &f32| 10.0 * x.log10())
+}
+pub fn power_block() -> Block {
+    Apply::new(|x: &Complex32| x.norm())
 }
 
-async fn run() -> Result<()> {
+pub async fn run() -> Result<()> {
     let mut fg = Flowgraph::new();
 
     let src = fg.add_block(WasmSdr::new());
@@ -26,7 +28,8 @@ async fn run() -> Result<()> {
     let shift = fg.add_block(FftShift::<f32>::new());
     //let keep = fg.add_block(Keep1InN::new(0.1, 40));
     let snk = fg.add_block(WasmWsSink::<f32>::new(
-        "ws://127.0.0.1:3000/node/data/fft".to_owned(),
+        "ws://127.0.0.1:3000/node_api/data/fft/2480000000/1/32/14/4000000".to_owned(),
+        20,
     ));
 
     fg.connect_stream_with_type(src, "out", fft, "in", Slab::with_config(65536, 2, 0))?;

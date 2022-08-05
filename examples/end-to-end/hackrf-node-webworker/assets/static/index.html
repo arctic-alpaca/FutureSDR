@@ -39,6 +39,17 @@
             font-size: 14px;
         }
 
+        #status_output {
+            min-height: 400px;
+            min-width: 800px;
+            max-width: 800px;
+            max-height: 400px;
+            background-color: white;
+            color: black;
+            white-space: pre-line;
+            #overflow-y: scroll;
+            overflow: auto;
+        }
         #start {
             margin: 0;
             padding: 20px;
@@ -57,12 +68,19 @@
 <input type="range" value="42" min="800000000" max="900000000" step="1000000" onchange="update_slider(this.value)" />
 <div id="node_id_form">
     <form>
-        <label class="white_text" for="node_id">Please insert a Node ID if available. Needs to be a Uuid v4, no checking is done at this point, the application will fail if this is incorrect. If no ID is set, the server will assign you one. Please see the developer console.:</label><br>
+        <label class="white_text" for="node_id">Please insert a Node ID if available. Needs to be a Uuid v4, no checking is done at this point, the application will fail if this is incorrect. If no ID is set, a random will be assigned.:</label><br>
         <input type="text" id="node_id" name="node_id" size="30"><br>
         <input type="button" id="node_id_submit" name="node_id_submit" value="Set Node ID" onclick="process_node_id(node_id.value)">
         <input type="button" id="node_id_generate" name="node_id_generate" value="Generate new Node ID" onclick="generate_node_id()">
     </form>
-    <div class="white_text" id="status">Please see the developer console output for information about the current status.</div>
+    <div class="white_text" id="status">Status output may reduce performance:</div>
+    <div>
+        <input type="checkbox" id="activate_status_output" name="activate_status_output" onclick="(function () {
+            status_output_active = !status_output_active
+        })()" checked>
+        <label for="activate_status_output">Activate status output</label>
+    </div>
+    <div id="status_output" ></div>
 </div>
 
 <script type="text/javascript">
@@ -72,12 +90,12 @@
         print: (function() {
             return function(text) {
                 if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
-                console.log(text);
+                add_text_to_status_output(text);
             };
         })(),
         printErr: function(text) {
             if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
-            console.error(text);
+            add_text_to_status_output(text);
         },
         setStatus: function(text) {
             if (!Module.setStatus.last) Module.setStatus.last = { time: Date.now(), text: '' };
@@ -90,7 +108,7 @@
             if (m) {
                 text = m[1];
             }
-            console.log(text);
+            add_text_to_status_output(text);
         },
         totalDependencies: 0,
         monitorRunDependencies: function(left) {
@@ -99,38 +117,42 @@
         }
     };
 
+    var status_output_active = true;
+    var running = true;
+    const wasm_module_functions = {};
+
     Module.setStatus('Downloading...');
 
+    var samples = new Float32Array(2048);
     var read_samples;
     var set_freq;
     var set_amp;
     var set_lna;
     var set_vga;
     var set_sample_rate;
+    var resolver = function () {};
     var new_freq = false;
     var freq = 0;
 
-
     Module['onRuntimeInitialized'] = function() {
-        console.log("EMSCRIPTEN LOADED");
+        add_text_to_status_output("EMSCRIPTEN LOADED");
         read_samples = Module.read_samples;
         set_freq = Module.set_freq;
         set_amp = Module.set_amp;
         set_lna = Module.set_lna;
         set_vga = Module.set_vga;
         set_sample_rate = Module.set_sample_rate;
-        console.log(Module);
+        add_text_to_status_output(Module);
     }
 
     function update_slider(f) {
         let i = parseInt(f, 10);
-        console.log("setting freq " + i/1000000)
-        new_freq = true;
-        freq = i;
+        add_text_to_status_output("setting freq " + i/1000000);
+        set_freq(i);
     }
 
     function process_node_id(node_id) {
-        console.log("Node ID set to: " + node_id);
+        add_text_to_status_output("Node ID set to: " + node_id);
         document.cookie = "node_id=" + node_id + "; expires=Thu, 31 Dec 2100 12:00:00 UTC";
     }
 
@@ -143,16 +165,15 @@
         document.getElementsByTagName("head")[0].appendChild(script);
         return false;
     }
-    const wasm_module_functions = {};
 
     function generate_node_id() {
         if(typeof wasm_module_functions.generate_uuid === 'function') {
             let node_id = wasm_module_functions.generate_uuid();
-            console.log("Generated Node ID: " + node_id);
+            add_text_to_status_output("Generated Node ID: " + node_id);
             document.getElementById("node_id").value = node_id;
             process_node_id(node_id);
         } else {
-            console.log("Not loaded yet, please try again in a moment");
+            add_text_to_status_output("Not loaded yet, please try again in a moment");
         }
     }
 
@@ -160,7 +181,7 @@
         let cookie_name = document.cookie.split("=")[0];
         let cookie_value = document.cookie.split("=")[1];
         if (cookie_name === "node_id") {
-            console.log("Found existing Node ID: " + cookie_value);
+            add_text_to_status_output("Found existing Node ID: " + cookie_value);
             document.getElementById("node_id").value = cookie_value;
         }
     }
@@ -169,19 +190,34 @@
         let cookie_name = document.cookie.split("=")[0];
         let cookie_value = document.cookie.split("=")[1];
         if (cookie_name !== "node_id") {
-            console.log("No Node ID set, generating and setting one");
+            add_text_to_status_output("No Node ID set, generating and setting one");
             generate_node_id();
         }
     }
 
-    check_node_id_cookie_and_set_if_present();
+    function add_leading_zero_to_time(time) {
+        if (time < 10) {
+            return "0" + time;
+        } else {
+            return time;
+        }
+    }
 
+    function add_text_to_status_output(text) {
+        if (status_output_active) {
+            let status_output = document.getElementById("status_output");
+            let now = new Date();
+            let new_text = add_leading_zero_to_time(now.getHours()) + ":" + add_leading_zero_to_time(now.getMinutes()) + ":" + add_leading_zero_to_time(now.getSeconds()) + " - " + text + "\n";
+            let text_to_add = document.createTextNode(new_text);
+            status_output.prepend(text_to_add);
+        }
+    }
+
+    check_node_id_cookie_and_set_if_present();
 </script>
 
-
-
 <script type="module">
-    import init, {input_samples, create_bridges, new_uuid} from "./hackrf_node_webworker.js"
+    import init, {input_samples, create_fft_worker, new_uuid} from "./hackrf_node_webworker.js"
 
     function generate_uuid() {
         return new_uuid()
@@ -193,12 +229,17 @@
 
     async function push() {
         while(true) {
-            let s = read_samples();
-            if(s.length > 0) {
-                await input_samples(s.slice(0, 2048 * 2 * 80));
+            if(running) {
+                let s = read_samples();
+                if(s.length > 0) {
+                    input_samples(s);
+                } else {
+                    add_text_to_status_output("sleeping, no samples");
+                    await Sleep(200);
+                }
             } else {
-                console.log("sleeping, no samples");
-                await Sleep(200);
+                add_text_to_status_output("just chilling");
+                await Sleep(2000);
             }
         }
     }
@@ -209,16 +250,17 @@
 
     function waitForElement(){
         if(typeof read_samples === 'function') {
-            console.log("present, loading");
+            add_text_to_status_output("present, loading");
             runWasm();
         } else {
-            console.log("not present, waiting");
+            add_text_to_status_output("not present, waiting");
             setTimeout(waitForElement, 250);
         }
     }
     const rustWasm = await init();
+    //setup_logger();
     wasm_module_functions.generate_uuid = generate_uuid;
-    await create_bridges();
+    await create_fft_worker();
     waitForElement();
 
 </script>

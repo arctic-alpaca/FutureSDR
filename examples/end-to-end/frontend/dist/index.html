@@ -51,10 +51,17 @@
              return new Promise(resolve => setTimeout(resolve, milliseconds));
          }
 
+         function SetDataUrl() {
+            let path_parts = window.location.pathname.split('/');
+            let ws_url = "ws://localhost:3000/frontend_api/data/" + path_parts[2] + "/" + path_parts[3];
+            return ws_url;
+         }
+
          const runWasm = async () => {
              await Sleep(500);
              const rustWasm = await init();
-             add_freq('#freq', 'ws://localhost:3000/ws/frontend', -20, 10);
+             let ws_url = SetDataUrl();
+             add_freq('#freq', ws_url, -20, 10);
          };
 
          runWasm();

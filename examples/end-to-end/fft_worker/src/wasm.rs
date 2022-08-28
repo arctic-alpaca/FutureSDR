@@ -18,7 +18,7 @@ pub fn power_block() -> Block {
     Apply::new(|x: &Complex32| x.norm())
 }
 
-pub async fn run() -> Result<()> {
+pub async fn run(ws_url: String) -> Result<()> {
     let mut fg = Flowgraph::new();
 
     let src = fg.add_block(WasmSdr::new());
@@ -28,8 +28,9 @@ pub async fn run() -> Result<()> {
     let shift = fg.add_block(FftShift::<f32>::new());
     //let keep = fg.add_block(Keep1InN::new(0.1, 40));
     let snk = fg.add_block(WasmWsSink::<f32>::new(
-        "ws://127.0.0.1:3000/node_api/data/fft/2480000000/1/32/14/4000000".to_owned(),
-        20,
+        
+        ws_url,
+        shared_utils::FFT_CHUNKS_PER_WS_TRANSFER,
     ));
 
     fg.connect_stream_with_type(src, "out", fft, "in", Slab::with_config(65536, 2, 0))?;

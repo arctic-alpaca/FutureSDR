@@ -1,21 +1,21 @@
-use crate::frontend_api::frontend_data_ws_handler;
-use crate::frontend_serve::serve_data_visualizer;
-use crate::node_api::node_data_ws_handler;
-use crate::PG_CONNECTION_STRING;
+use crate::frontend_api::frontend_data_api_ws_handler;
+use crate::frontend_api::nodes::{frontend_nodes_metadata, frontend_nodes_set_config};
+use crate::node_api::{control::control_node_ws_handler, data::data_node_ws_handler};
+use crate::{BIND_ADDR, PG_CONNECTION_STRING};
 use axum::http::{HeaderValue, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::get_service;
-use axum::{routing::get, Extension, Router};
+use axum::{routing::get, routing::post, Extension, Router};
+use chrono::Utc;
 use serde::Deserialize;
 use serde::Serialize;
+use shared_utils::{BackendToNode, DataTypeMarker};
 use sqlx::PgPool;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
-use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
-use tokio::sync::broadcast::Sender;
-use tokio::sync::Mutex;
+use tokio::sync::{broadcast, mpsc, Mutex, RwLock};
 use tower_cookies::CookieManagerLayer;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
@@ -29,14 +29,6 @@ pub struct State {
     pub nodes: Arc<Mutex<HashMap<NodeId, NodeState>>>,
 }
 
-/// Used to mark what kind of data a node does or should produce. Also used in path parameter for node and frontend.
-#[derive(Debug, Deserialize, Serialize, Hash, Eq, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum DataTypeMarker {
-    Fft,
-    ZigBee,
-}
-
 /// New type for [uuid::Uuid].
 #[derive(Debug, Deserialize, Serialize, Hash, Eq, PartialEq, Copy, Clone)]
 pub struct NodeId(pub uuid::Uuid);
@@ -48,36 +40,19 @@ impl Display for NodeId {
 }
 
 /// Type alias to make clippy happy (https://rust-lang.github.io/rust-clippy/master/index.html#type_complexity)
-pub type DataStreamStorage = Arc<Mutex<HashMap<DataTypeMarker, Sender<Arc<Vec<u8>>>>>>;
+pub type DataStreamStorage = HashMap<DataTypeMarker, broadcast::Sender<Arc<Vec<u8>>>>;
+
+#[derive(Debug)]
+pub struct NodeControlConnection {
+    pub to_node: mpsc::Sender<BackendToNode>,
+}
 
 #[derive(Debug)]
 pub struct NodeState {
+    pub control_connection: NodeControlConnection,
     pub data_streams: DataStreamStorage,
-}
-
-/// SDR parameters used to collect parameters for incoming node data from the request path.
-#[derive(Debug, Deserialize, Serialize)]
-pub struct NodeSdrParameters {
-    // default node config taken from https://github.com/bastibl/webusb-libusb/blob/works/example/hackrf_open.cc#L161
-    // steps and ranges taken from https://hackrf.readthedocs.io/en/latest/faq.html#what-gain-controls-are-provided-by-hackrf
-    // Sample rate and frequency taken from https://hackrf.readthedocs.io/en/latest/hackrf_one.html
-    pub data_type: DataTypeMarker,
-
-    // default: 2480000000 (2,48GHz)
-    // 1MHz to 6 GHz (1000000 - 6000000000)
-    pub freq: u64,
-    // default 1
-    // on or off (0 or 1)
-    pub amp: u8,
-    // default: 32
-    // 0-40 in steps of 8
-    pub lna: u8,
-    // default: 14
-    // 0-62 in steps of 2
-    pub vga: u8,
-    // default: 4000000 (4 Msps)
-    // 1 Msps to 20 Msps (million samples per second) (1000000 - 20000000)
-    pub sample_rate: u64,
+    pub last_seen: Arc<Mutex<chrono::DateTime<Utc>>>,
+    pub terminate_data: Arc<RwLock<bool>>,
 }
 
 /// NodeId and DataTypeMarker from the request path. Used to identify which node and what data stream
@@ -119,23 +94,35 @@ async fn build_router() -> Router {
 
     let file_server_service = ServeDir::new("serve");
 
+    let fft_server_service = ServeDir::new("serve/frontend/fft");
+    let zigbee_server_service = ServeDir::new("serve/frontend/zigbee");
+
     Router::new()
-        // node api
+        // node data api
         .route(
-            "/node_api/data/:data_type/:freq/:amp/:lna/:vga/:sample_rate",
-            get(node_data_ws_handler),
+            "/node/api/data/:data_type/:freq/:amp/:lna/:vga/:sample_rate",
+            get(data_node_ws_handler),
         )
+        // node control api
+        .route("/node/api/control", get(control_node_ws_handler))
         // frontend api
         .route(
             "/frontend_api/data/:node_id/:data_type",
-            get(frontend_data_ws_handler),
+            get(frontend_data_api_ws_handler),
         )
-        // serve data visualizer
-        .route(
-            "/frontend/:node_id/:data_type/*rest",
-            get(serve_data_visualizer),
+        .route("/frontend_api/config", post(frontend_nodes_set_config))
+        .route("/frontend_api/nodes", get(frontend_nodes_metadata))
+        // Visualizers get served separately because the path parameters need to be removed
+        // from the path before serving the files.
+        .nest(
+            "/frontend/fft/:node_id",
+            get_service(fft_server_service).handle_error(handle_file_serve_error),
         )
-        // File serving TODO specify file serving properly
+        .nest(
+            "/frontend/zigbee/:node_id",
+            get_service(zigbee_server_service).handle_error(handle_file_serve_error),
+        )
+        // File serving
         .fallback(get_service(file_server_service).handle_error(handle_file_serve_error))
         .layer(Extension(state))
         .layer(cors)
@@ -151,7 +138,7 @@ async fn build_router() -> Router {
 pub async fn start_up() {
     let app = build_router().await;
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    let addr = *BIND_ADDR;
     debug!("listening on {}", addr);
     axum::Server::bind(&addr)
         .serve(app.into_make_service())

@@ -64,8 +64,6 @@
         </button>
     </div>
 </div>
-<div id="freq"></div>
-<input type="range" value="42" min="800000000" max="900000000" step="1000000" onchange="update_slider(this.value)" />
 <div id="node_id_form">
     <form>
         <label class="white_text" for="node_id">Please insert a Node ID if available. Needs to be a Uuid v4, no checking is done at this point, the application will fail if this is incorrect. If no ID is set, a random will be assigned.:</label><br>
@@ -118,7 +116,6 @@
     };
 
     var status_output_active = true;
-    var running = true;
     const wasm_module_functions = {};
 
     Module.setStatus('Downloading...');
@@ -145,15 +142,9 @@
         add_text_to_status_output(Module);
     }
 
-    function update_slider(f) {
-        let i = parseInt(f, 10);
-        add_text_to_status_output("setting freq " + i/1000000);
-        set_freq(i);
-    }
-
     function process_node_id(node_id) {
         add_text_to_status_output("Node ID set to: " + node_id);
-        document.cookie = "node_id=" + node_id + "; expires=Thu, 31 Dec 2100 12:00:00 UTC";
+        document.cookie = "node_id=" + node_id + "; expires=Thu, 31 Dec 2100 12:00:00 UTC;";
     }
 
     var myLink = document.getElementById('start');
@@ -188,7 +179,6 @@
 
     function check_node_id_and_set_if_not_present() {
         let cookie_name = document.cookie.split("=")[0];
-        let cookie_value = document.cookie.split("=")[1];
         if (cookie_name !== "node_id") {
             add_text_to_status_output("No Node ID set, generating and setting one");
             generate_node_id();
@@ -213,14 +203,55 @@
         }
     }
 
+    function set_freq_helper(freq) {
+        let i = parseInt(freq, 10);
+        set_freq(i);
+    }
+    function set_amp_helper(amp) {
+        let i = parseInt(amp, 10);
+        set_amp(i);
+    }
+    function set_lna_helper(lna) {
+        let i = parseInt(lna, 10);
+        set_lna(i);
+    }
+    function set_vga_helper(vga) {
+        let i = parseInt(vga, 10);
+        set_vga(i);
+    }
+    function set_sample_rate_helper(sample_rate) {
+        let i = parseInt(sample_rate, 10);
+        set_sample_rate(i);
+    }
+
     check_node_id_cookie_and_set_if_present();
 </script>
 
 <script type="module">
-    import init, {input_samples, create_fft_worker, new_uuid} from "./hackrf_node_webworker.js"
+    import init, {input_samples, new_uuid, set_console_error_panic_hook, initialize_config, create_control_worker} from "./hackrf_node_webworker.js"
 
     function generate_uuid() {
         return new_uuid()
+    }
+
+    export function print_from_rust(text) {
+        add_text_to_status_output(text);
+    }
+
+    export function set_freq_from_rust(freq) {
+        set_freq_helper(freq);
+    }
+    export function set_amp_from_rust(amp) {
+        set_amp_helper(amp);
+    }
+    export function set_lna_from_rust(lna) {
+        set_lna_helper(lna);
+    }
+    export function set_vga_from_rust(vga) {
+        set_vga_helper(vga);
+    }
+    export function set_sample_rate_from_rust(sample_rate) {
+        set_sample_rate_helper(sample_rate);
     }
 
     function Sleep(milliseconds) {
@@ -228,18 +259,19 @@
     }
 
     async function push() {
+        let first_run = true;
         while(true) {
-            if(running) {
-                let s = read_samples();
-                if(s.length > 0) {
-                    input_samples(s);
-                } else {
-                    add_text_to_status_output("sleeping, no samples");
-                    await Sleep(200);
+            let s = read_samples();
+            if (s.length > 0) {
+                // wait until the hackrf driver is running to apply initial config
+                if (first_run) {
+                    initialize_config();
+                    first_run = false;
                 }
+                input_samples(s);
             } else {
-                add_text_to_status_output("just chilling");
-                await Sleep(2000);
+                //add_text_to_status_output("sleeping, no samples");
+                await Sleep(200);
             }
         }
     }
@@ -254,13 +286,20 @@
             runWasm();
         } else {
             add_text_to_status_output("not present, waiting");
-            setTimeout(waitForElement, 250);
+            setTimeout(waitForElement, 1000);
         }
     }
+    window.print_from_rust = print_from_rust;
+    window.set_freq_from_rust = set_freq_from_rust;
+    window.set_amp_from_rust = set_amp_from_rust;
+    window.set_lna_from_rust = set_lna_from_rust;
+    window.set_vga_from_rust = set_vga_from_rust;
+    window.set_sample_rate_from_rust = set_sample_rate_from_rust;
+
     const rustWasm = await init();
-    //setup_logger();
+    set_console_error_panic_hook();
     wasm_module_functions.generate_uuid = generate_uuid;
-    await create_fft_worker();
+    create_control_worker();
     waitForElement();
 
 </script>

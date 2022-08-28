@@ -1,5 +1,5 @@
 [package]
-name = "hackrf_node_webworker"
+name = "frontend"
 version = "0.1.0"
 edition = "2021"
 
@@ -10,11 +10,13 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 console_error_panic_hook = "0.1.7"
-control-worker = {path ="../control_worker"}
+chrono = {version = "0.4.22", features = ["wasmbind", "serde"]}
 gloo-timers = {version = "0.2.4", features = ["futures"]}
-gloo-worker = "0.2.0"
+gloo-net = { version = "0.2.3", features = ["json"]}
 wasm-bindgen = "0.2.79"
 wasm-bindgen-futures = "0.4.32"
-fft-worker = {path = "../fft_worker"}
+web-sys = {version = "0.3.59", features = ["Document", "Element", "HtmlInputElement", "console", "HtmlSelectElement"]}
+js-sys = "0.3.59"
 uuid = {version = "1.1.2", features = ["v4", "js"]}
 shared_utils = {path = "../shared-utils"}
+serde_urlencoded = "0.7.1"

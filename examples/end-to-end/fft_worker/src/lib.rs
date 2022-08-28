@@ -3,45 +3,47 @@ pub mod keep_1_in_n;
 pub mod wasm;
 
 use gloo_worker::{HandlerId, Worker, WorkerScope};
-use shared_utils::Msg;
+use shared_utils::ToWorker;
 use wasm_bindgen_futures::spawn_local;
 
 #[cfg(feature = "include_main")]
 use gloo_worker::Registrable;
+
 #[cfg(feature = "include_main")]
 use wasm_bindgen::prelude::*;
 
 pub struct FftWorker {}
 
 impl Worker for FftWorker {
-    type Message = Msg<()>;
+    type Message = ();
 
-    type Input = Vec<i8>;
+    type Input = shared_utils::ToWorker;
 
     type Output = ();
 
     fn create(_scope: &WorkerScope<Self>) -> Self {
-        spawn_local(async move {
-            wasm::run().await.unwrap();
-        });
-
         Self {}
     }
 
-    fn update(&mut self, scope: &WorkerScope<Self>, msg: Self::Message) {
-        let Msg::Respond { output, id } = msg;
+    fn update(&mut self, _scope: &WorkerScope<Self>, _msg: Self::Message) {}
 
-        scope.respond(id, output);
-    }
-
-    fn received(&mut self, scope: &WorkerScope<Self>, msg: Self::Input, who: HandlerId) {
-        spawn_local(async move {
-            futuresdr::blocks::wasm_sdr::push_samples(msg).await;
-        });
-        scope.send_message(Msg::Respond {
-            output: (),
-            id: who,
-        });
+    fn received(&mut self, _scope: &WorkerScope<Self>, msg: Self::Input, _who: HandlerId) {
+        match msg {
+            ToWorker::Data { data } => {
+                spawn_local(async move {
+                    futuresdr::blocks::wasm_sdr::push_samples(data).await;
+                });
+            }
+            ToWorker::ApplyConfig { config } => {
+                let ws_url = format!(
+                    "ws://127.0.0.1:3000/node/api/data/fft/{}/{}/{}/{}/{}",
+                    config.freq, config.amp, config.lna, config.vga, config.sample_rate
+                );
+                spawn_local(async move {
+                    wasm::run(ws_url).await.unwrap();
+                });
+            }
+        }
     }
 }
 
@@ -50,7 +52,5 @@ impl Worker for FftWorker {
 pub fn main() {
     console_error_panic_hook::set_once();
 
-    FftWorker::registrar()
-        //.encoding::<MyCodec>()
-        .register();
+    FftWorker::registrar().register();
 }

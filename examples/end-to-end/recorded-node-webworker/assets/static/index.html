@@ -226,7 +226,6 @@
                 await Sleep(20);
                 // wait until the hackrf driver is running to apply initial config
                 if (first_run) {
-                    console.log("first_run");
                     initialize_config();
                     first_run = false;
                 }

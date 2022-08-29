@@ -1,7 +1,7 @@
 {
-  "name": "hackrf_node_webworker",
+  "name": "recoded_node_webworker",
   "version": "0.0.1",
-  "description": "FutureSDR End-To-End HackRF Node Example",
+  "description": "FutureSDR End-To-End Example - recorded node webworker",
   "browserslist": [
     "defaults"
   ],

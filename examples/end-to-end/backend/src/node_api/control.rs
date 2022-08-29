@@ -1,5 +1,5 @@
 use crate::application::{NodeControlConnection, NodeId, NodeState, State};
-use crate::node_api::extract_node_id_cookie;
+use crate::node_api::{extract_node_id_cookie, get_last_seen_and_terminate_from_state};
 use crate::DEFAULT_NODE_CONFIG;
 use axum::extract::ws::{Message, WebSocket};
 use axum::extract::WebSocketUpgrade;
@@ -16,18 +16,26 @@ use tower_cookies::Cookies;
 use tracing::{debug, error};
 
 /// Removes the node from the [State].
+/// Sets the `terminate_data` variable for that node to true to terminate all data streams.
+///
+/// # Panics
+/// If the node to be removed is not in the node state.
 async fn node_cleanup(state: Arc<State>, node_id: NodeId) {
     debug!("Removing node: {node_id}");
     let mut state_lock = state.nodes.lock().await;
+    // `terminate_data` is an Arc<RwLock<bool>>, so removing the node does not drop the variable
+    // but only one reference to it.
     *state_lock
         .get_mut(&node_id)
-        .unwrap()
+        .expect("Node was not present in state")
         .terminate_data
         .write()
         .await = true;
     state_lock.remove(&node_id);
 }
 
+/// Handles a control node connecting. If no `node_id`is present or if the `node_id` is already
+/// used by any other active node, a HTTP 400 status code is returned.
 pub async fn control_node_ws_handler(
     Extension(state): Extension<Arc<State>>,
     cookies: Cookies,
@@ -37,7 +45,7 @@ pub async fn control_node_ws_handler(
 
     let node_id = match extract_node_id_cookie(cookies) {
         Ok(node_id) => node_id,
-        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+        Err(_) => return (StatusCode::BAD_REQUEST, "No node ID").into_response(),
     };
 
     // Check if the control worker for this node id is already present.
@@ -45,13 +53,19 @@ pub async fn control_node_ws_handler(
         let state_lock = state.nodes.lock().await;
         if state_lock.contains_key(&node_id) {
             error!("Node with control worker already connected tried to connect: {node_id}");
-            return StatusCode::BAD_REQUEST.into_response();
+            return (StatusCode::BAD_REQUEST, "Node ID already taken").into_response();
         }
     }
 
     ws.on_upgrade(move |socket| control_node_ws_loop(socket, node_id, state))
 }
 
+/// Handles the control node websocket loop. This means receiving messages and sending messages
+/// from and to the control node.
+///
+/// # Panics
+/// - If a message to the node cannot be serialized.
+/// - If sending data over the `tokio::sync::mpsc::Sender<BackendToNode>` channel fails.
 async fn control_node_ws_loop(socket: WebSocket, node_id: NodeId, state: Arc<State>) {
     let (to_node_sender, mut to_node_receiver) =
         match process_control_node_connection(node_id, state.clone()).await {
@@ -71,6 +85,8 @@ async fn control_node_ws_loop(socket: WebSocket, node_id: NodeId, state: Arc<Sta
             }
         }
     });
+
+    tokio::spawn(update_last_seen(state.clone(), node_id));
 
     while let Some(msg) = ws_receiver.next().await {
         if let Ok(msg) = msg {
@@ -118,6 +134,37 @@ async fn control_node_ws_loop(socket: WebSocket, node_id: NodeId, state: Arc<Sta
     }
 }
 
+/// Every second the `last_seen` member of the node is checked and the config_storage is updated if
+/// it changed in that time. This tasks checks `terminate_data` every run to check whether it should
+/// terminate too.
+async fn update_last_seen(state: Arc<State>, node_id: NodeId) {
+    let (last_seen_mutex, terminate_data) =
+        match get_last_seen_and_terminate_from_state(state.clone(), node_id).await {
+            Ok((last_seen_mutex, terminate_data)) => (last_seen_mutex, terminate_data),
+            Err(_) => return,
+        };
+    let NodeId(node_id_inner) = node_id;
+    let mut last_seen = *last_seen_mutex.lock().await;
+
+    while !*terminate_data.read().await {
+        let new_last_seen = *last_seen_mutex.lock().await;
+        if last_seen != new_last_seen {
+            if let Err(e) = sqlx::query!(
+                "UPDATE config_storage SET last_seen = $1 WHERE node_id = $2",
+                new_last_seen,
+                node_id_inner
+            )
+            .execute(&state.db_pool)
+            .await
+            {
+                error!("Failed to update last_seen in config_storage: {e}");
+            }
+        }
+        last_seen = *last_seen_mutex.lock().await;
+        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+    }
+}
+
 /// Used the `to_node_sender` channel sender to send the `error_msg` to the node and terminates the
 /// node.
 ///
@@ -138,6 +185,10 @@ async fn send_error_to_node(
         .expect("Failed to send data to to-node-sender task");
 }
 
+/// Processes a newly connected control node into the `state` and returns two channels.
+/// The `Sender<BackendToNode>` is to send messages to the control node from other parts of the application.
+/// The `Receiver<BackendToNode>` is for the `control_node_ws_loop` to receive messages to be
+/// sent to the node.
 async fn process_control_node_connection(
     node_id: NodeId,
     state: Arc<State>,
@@ -173,6 +224,9 @@ async fn process_control_node_connection(
     })
 }
 
+/// Retrieves the config for the specified `node_id` from the database or returns the default config.
+/// # Panics
+/// If the default config cannot be serialized.
 async fn retrieve_config_or_use_default(
     node_id: NodeId,
     db_pool: &PgPool,

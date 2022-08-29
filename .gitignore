@@ -11,3 +11,7 @@ examples/end-to-end/node/.idea/
 
 
 examples/end-to-end/hackrf-node-webworker/dist/
+
+examples/end-to-end/backend/serve/
+
+examples/end-to-end/recorded-node-webworker/dist/

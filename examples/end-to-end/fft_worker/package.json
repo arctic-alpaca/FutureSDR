@@ -1,12 +1,12 @@
 {
   "name": "fft_worker",
   "version": "0.0.1",
-  "description": "FutureSDR End-To-End HackRF Node Example",
+  "description": "FutureSDR End-To-End Example - fft worker",
   "browserslist": [
     "defaults"
   ],
-  "author": "Bastian Bloessl <mail@bastibl.net>",
-  "license": "ISC",
+  "author": "arctic-alpaca <67190338+arctic-alpaca@users.noreply.github.com>",
+  "license": "Apache-2.0",
   "devDependencies": {
     "browser-sync": "^2.26.14",
     "gulp": "^4.0.2",

@@ -10,13 +10,19 @@ use std::sync::Arc;
 use tracing::error;
 use uuid::Uuid;
 
+/// A helper to retrieve node metadata from the database.
 #[derive(Debug)]
 struct NodeMetaData {
+    /// Node ID
     node_id: Uuid,
+    /// Last seen timestamp
     last_seen: chrono::DateTime<Utc>,
+    /// The serialized config string
     config_serialized: String,
 }
 
+/// Retrieves node metadata from the database and returns it as JSON to the client.
+/// If no data is found, an empty JSON response is given.
 pub async fn frontend_nodes_metadata(
     Extension(state): Extension<Arc<State>>,
 ) -> Json<Vec<NodeMetaDataResponse>> {
@@ -41,12 +47,23 @@ pub async fn frontend_nodes_metadata(
     Json(response)
 }
 
+/// Takes a JSON representation of a `NodeConfigRequest` and applies it to the specified node.
+///
+/// # Panics
+/// - If the ' to_node' sender of the 'NodeState' returns an error.
+/// - If the supplied config cannot be serialized.
 pub async fn frontend_nodes_set_config(
     Extension(state): Extension<Arc<State>>,
     Json(config): Json<NodeConfigRequest>,
 ) -> impl IntoResponse {
+    if let Err(e) = config.config.sdr_config.check_plausibility() {
+        error!("Bad config received: {e}");
+        return (StatusCode::BAD_REQUEST, e.to_string()).into_response();
+    }
+
     let config_serialized =
         serde_json::to_string(&config.config).expect("Failed to serialize config");
+
     if let Err(e) = sqlx::query!(
         "UPDATE config_storage SET config_serialized = $1 WHERE node_id = $2",
         config_serialized,

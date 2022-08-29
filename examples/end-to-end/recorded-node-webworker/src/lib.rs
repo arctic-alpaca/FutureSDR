@@ -4,6 +4,7 @@
 
 //! The node implementation for the end-to-end example.
 
+use byteorder::ReadBytesExt;
 use control_worker::ControlWorker;
 use fft_worker::FftWorker;
 use gloo_worker::Spawnable;
@@ -12,8 +13,47 @@ use shared_utils::{
     DataTypeMarker, FromControlWorkerMsg, NodeConfig, ToControlWorkerMsg, ToDataWorker,
 };
 use std::cell::RefCell;
+use std::io::Cursor;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
+
+/// Recorded SDR data
+static RECORDED_I8: &[u8] = include_bytes!("../../record.raw");
+
+/// Struct to use recorded data in JS.
+#[wasm_bindgen]
+pub struct Data {
+    /// Cursor to recorded data.
+    cursor: Cursor<&'static [u8]>,
+}
+
+#[wasm_bindgen]
+impl Data {
+    /// Create new Data struct.
+    pub fn new() -> Self {
+        Data::default()
+    }
+
+    /// Read n values.
+    pub fn read_n(&mut self, n: usize) -> Vec<i8> {
+        let mut data_vector = Vec::with_capacity(n);
+        for _ in 0..n {
+            if self.cursor.position() >= (RECORDED_I8.len() - 1) as u64 {
+                self.cursor.set_position(0);
+            }
+            data_vector.push(self.cursor.read_i8().unwrap());
+        }
+        data_vector
+    }
+}
+
+impl Default for Data {
+    fn default() -> Self {
+        Data {
+            cursor: Cursor::new(RECORDED_I8),
+        }
+    }
+}
 
 thread_local! {
     static CONTROL_WORKER: RefCell<Option<WorkerBridge<ControlWorker>>> = RefCell::new(None);

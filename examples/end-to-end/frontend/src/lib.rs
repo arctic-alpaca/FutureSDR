@@ -1,8 +1,10 @@
-use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
+use chrono::{TimeZone, Utc};
 use gloo_net::http::Request;
-use gloo_timers::future::TimeoutFuture;
-use shared_utils::{DataTypeMarker, NodeConfig, NodeConfigRequest, NodeMetaDataResponse};
-use std::collections::HashSet;
+
+use shared_utils::{
+    DataTypeConfig, DataTypeMarker, NodeConfig, NodeConfigRequest, NodeMetaDataResponse, SdrConfig,
+};
+use std::collections::HashMap;
 use std::str::FromStr;
 use std::time::Duration;
 use uuid::Uuid;
@@ -80,23 +82,39 @@ fn get_config_from_form() -> NodeConfigRequest {
         .trim()
         .parse()
         .unwrap();
-    let mut data_types = HashSet::new();
+    let fft_chunks_per_ws_transfer: usize = document
+        .get_element_by_id("fft_chunks_per_ws_transfer_input")
+        .unwrap()
+        .dyn_into::<HtmlInputElement>()
+        .unwrap()
+        .value()
+        .trim()
+        .parse()
+        .unwrap();
+    let mut data_types = HashMap::new();
     if fft {
-        data_types.insert(DataTypeMarker::Fft);
+        data_types.insert(
+            DataTypeMarker::Fft,
+            DataTypeConfig::Fft {
+                fft_chunks_per_ws_transfer,
+            },
+        );
     }
     if zigbee {
-        data_types.insert(DataTypeMarker::ZigBee);
+        data_types.insert(DataTypeMarker::ZigBee, DataTypeConfig::ZigBee);
     }
 
     NodeConfigRequest {
         node_id,
         config: NodeConfig {
+            sdr_config: SdrConfig {
+                freq,
+                amp,
+                lna,
+                vga,
+                sample_rate,
+            },
             data_types,
-            freq,
-            amp,
-            lna,
-            vga,
-            sample_rate,
         },
     }
 }
@@ -114,14 +132,14 @@ pub async fn send_config_rust() {
         let window = web_sys::window().unwrap();
         let document = window.document().unwrap();
         let send_response = document.get_element_by_id("send_response").unwrap();
-        send_response.set_inner_html(&format!("success"));
+        send_response.set_inner_html("success");
 
         spawn_local(async move {
             gloo_timers::future::sleep(Duration::from_secs(3)).await;
             let window = web_sys::window().unwrap();
             let document = window.document().unwrap();
             let send_response = document.get_element_by_id("send_response").unwrap();
-            send_response.set_inner_html(&format!(""));
+            send_response.set_inner_html("");
         })
     }
 }
@@ -176,16 +194,17 @@ fn create_table_row(node_meta_data_response: NodeMetaDataResponse) -> String {
 
     let last_seen = node_meta_data_response.last_seen.to_string();
 
-    let NodeConfig {
-        data_types,
+    let SdrConfig {
         freq,
         amp,
         lna,
         vga,
         sample_rate,
-    } = node_meta_data_response.config;
-    let mut data_types = data_types
-        .iter()
+    } = node_meta_data_response.config.sdr_config;
+    let mut data_types = node_meta_data_response
+        .config
+        .data_types
+        .values()
         .fold("".to_owned(), |acc, x| format!("{acc}{x}; "));
     // remove last space and semicolon
     data_types.pop();

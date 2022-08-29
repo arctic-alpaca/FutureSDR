@@ -22,10 +22,16 @@ use tower_http::services::ServeDir;
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::{DefaultMakeSpan, TraceLayer};
 use tracing::debug;
+use tracing::error;
 
+/// Contains the applications state:
+/// - Database connection pool
+/// - Node state
 #[derive(Debug)]
 pub struct State {
+    /// PostgreSQL database pool
     pub db_pool: PgPool,
+    /// All connected nodes with their state.
     pub nodes: Arc<Mutex<HashMap<NodeId, NodeState>>>,
 }
 
@@ -42,16 +48,23 @@ impl Display for NodeId {
 /// Type alias to make clippy happy (https://rust-lang.github.io/rust-clippy/master/index.html#type_complexity)
 pub type DataStreamStorage = HashMap<DataTypeMarker, broadcast::Sender<Arc<Vec<u8>>>>;
 
+/// Allows sending control messages to the node.
 #[derive(Debug)]
 pub struct NodeControlConnection {
+    /// MPSC channel to send messages to the node.
     pub to_node: mpsc::Sender<BackendToNode>,
 }
 
+/// Contains all state needed to handle a single node.
 #[derive(Debug)]
 pub struct NodeState {
+    /// Send messages to the control node.
     pub control_connection: NodeControlConnection,
+    /// All data streams coming from this node.
     pub data_streams: DataStreamStorage,
+    /// When the node was last seen.
     pub last_seen: Arc<Mutex<chrono::DateTime<Utc>>>,
+    /// Indicator that all data streams should terminate.
     pub terminate_data: Arc<RwLock<bool>>,
 }
 
@@ -59,15 +72,21 @@ pub struct NodeState {
 /// is requested.
 #[derive(Debug, Deserialize, Serialize)]
 struct FrontendPathParameter {
+    /// The node ID.
     node_id: NodeId,
+    /// A marker to specify the data type.
     mode: DataTypeMarker,
 }
 
+/// Handles file serve errors, logs the error and returns a HTTP 500 status code.
 pub async fn handle_file_serve_error(err: std::io::Error) -> impl IntoResponse {
-    debug!(%err);
+    error!(%err);
     (StatusCode::INTERNAL_SERVER_ERROR, "Failure to serve file")
 }
 
+/// Builds the router and applies all needed middleware layers.
+/// Middleware will set CORS, COEP and COOP headers.
+/// Creates file serving services and defines API surface.
 async fn build_router() -> Router {
     let db_pool = PgPool::connect(PG_CONNECTION_STRING)
         .await
@@ -135,6 +154,10 @@ async fn build_router() -> Router {
         )
 }
 
+/// Starts the backend and awaits the server.
+///
+/// # Panics
+/// This function panics if the server cannot bind to the `BIND_ADDR` constant.
 pub async fn start_up() {
     let app = build_router().await;
 

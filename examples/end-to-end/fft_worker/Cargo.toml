@@ -1,8 +1,9 @@
 [package]
 name = "fft-worker"
 version = "0.1.0"
-authors = ["arctic-alpaca <67190338+arctic-alpaca@users.noreply.github.com>"]
+authors = ["FutureSDR Contributors <team@futuresdr.org>","arctic-alpaca <67190338+arctic-alpaca@users.noreply.github.com>"]
 edition = "2021"
+license = "Apache-2.0"
 
 [workspace]
 

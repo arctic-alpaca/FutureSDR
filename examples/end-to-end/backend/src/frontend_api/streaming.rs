@@ -1,24 +1,17 @@
 use crate::application::{NodeId, State};
-
+use crate::frontend_api;
+use axum::extract::ws::WebSocket;
 use axum::extract::WebSocketUpgrade;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-
-use crate::frontend_api;
-use axum::extract::ws::WebSocket;
 use shared_utils::DataTypeMarker;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tracing::{debug, error};
 
-/*pub async fn frontend_realtime_data_ws_handler(
-   Extension(state): Extension<Arc<State>>,
-   Path((node_id, data_type)): Path<(NodeId, DataTypeMarker)>,
-   ws: WebSocketUpgrade,
-
-*/
-
-pub async fn frontend_realtime_data_ws_handler(
+/// Handles requests for streaming data from the frontend.
+/// If no node with `node_id` is currently in the `state`, a HTTP 400 status code is returned.
+pub async fn frontend_streaming_data_ws_handler(
     state: Arc<State>,
     node_id: NodeId,
     data_type: DataTypeMarker,
@@ -39,10 +32,11 @@ pub async fn frontend_realtime_data_ws_handler(
         }
     };
 
-    ws.on_upgrade(move |socket| frontend_realtime_data_ws_loop(socket, receiver, data_type))
+    ws.on_upgrade(move |socket| frontend_streaming_data_ws_loop(socket, receiver, data_type))
 }
 
-pub async fn frontend_realtime_data_ws_loop(
+/// Relays node data to the interested frontends. The method depends on the `data_type` requested.
+pub async fn frontend_streaming_data_ws_loop(
     mut socket: WebSocket,
     mut receiver: broadcast::Receiver<Arc<Vec<u8>>>,
     data_type: DataTypeMarker,

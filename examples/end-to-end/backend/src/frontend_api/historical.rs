@@ -12,21 +12,29 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::{debug, error};
 
+/// A helper to extract historical data from a database query.
 #[derive(Debug)]
 struct HistoricalData {
+    /// The data received from the database.
     pub data: Vec<u8>,
 }
 
+/// A helper to extract whether or not historical data exists from a database query.
 #[derive(Debug)]
 struct HistoricalDataExists {
+    /// The boolean value received from the database.
     pub exists: Option<bool>,
 }
 
+/// A helper to extract the timestamp out of a HTTP GET request query.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TimestampQuery {
+    /// The timestamp extracted from the query.
     pub timestamp: chrono::DateTime<Utc>,
 }
 
+/// Handles requests by the frontend for historical data.
+/// Checks whether historical data is present and if so, starts the serving process.
 pub async fn frontend_historical_data_ws_handler(
     state: Arc<State>,
     node_id: NodeId,
@@ -113,8 +121,11 @@ pub async fn frontend_historical_data_ws_handler(
     ws.on_upgrade(move |socket| frontend_historical_data_ws_loop(socket, receiver, data_type))
 }
 
-// We need to use an mpsc here since the database overwhelms `process_fft_data` with a broadcast
-// channel and we get a huge amount of "channel lagged by x" errors.
+/// Sends the historical data to the frontend. The method depends on the `data_type`.
+///
+/// # Notes:
+/// We need to use an mpsc here since the database overwhelms `process_fft_data` with a broadcast
+/// channel and we get a huge amount of "channel lagged by x" errors.
 pub async fn frontend_historical_data_ws_loop(
     mut socket: WebSocket,
     mut receiver: mpsc::Receiver<Arc<Vec<u8>>>,

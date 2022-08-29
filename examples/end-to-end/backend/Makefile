@@ -14,6 +14,9 @@ end-to-end:
 	cd ../hackrf-node-webworker && \
 		make wasm &&\
 		cp -r ./dist/* ../backend/serve/node
+	cd ../recorded-node-webworker && \
+		make wasm &&\
+		cp -r ./dist/* ../backend/serve/recorded_node
 	cd ../frontend && \
 		make wasm &&\
 		cp -r ./dist/* ../backend/serve/frontend
@@ -25,6 +28,7 @@ end-to-end:
 clean:
 	rm -rf serve
 	cd ../hackrf-node-webworker && make clean
+	cd ../recorded-node-webworker && make clean
 	cd ../frontend && make clean
 	cd ../shared-utils && cargo clean
 	cargo clean

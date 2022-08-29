@@ -1,3 +1,7 @@
+#![allow(clippy::missing_docs_in_private_items)]
+#![allow(clippy::missing_errors_doc)]
+// Provided by supervisor.
+
 use std::mem::size_of;
 
 use futuresdr::anyhow::Result;

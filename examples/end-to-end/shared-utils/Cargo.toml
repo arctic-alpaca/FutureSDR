@@ -3,6 +3,7 @@ name = "shared_utils"
 version = "0.1.0"
 authors = ["arctic-alpaca <67190338+arctic-alpaca@users.noreply.github.com>"]
 edition = "2021"
+license = "Apache-2.0"
 
 [workspace]
 
@@ -11,6 +12,7 @@ crate-type = ["cdylib", "rlib"]
 
 
 [dependencies]
+anyhow = "1.0.62"
 chrono = {version = "0.4.22", features = ["serde", "wasmbind"]}
 gloo-worker = "0.2.0"
 serde ={ version = "1", features = ["derive"]}

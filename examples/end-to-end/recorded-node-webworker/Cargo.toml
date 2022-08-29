@@ -1,5 +1,5 @@
 [package]
-name = "hackrf_node_webworker"
+name = "recorded_node_webworker"
 version = "0.1.0"
 authors = ["arctic-alpaca <67190338+arctic-alpaca@users.noreply.github.com>"]
 edition = "2021"
@@ -11,6 +11,7 @@ license = "Apache-2.0"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+byteorder = "1"
 console_error_panic_hook = "0.1.7"
 control-worker = {path ="../control_worker"}
 gloo-timers = {version = "0.2.4", features = ["futures"]}

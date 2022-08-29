@@ -1,5 +1,5 @@
 use crate::application::{NodeId, State};
-use crate::node_api::extract_node_id_cookie;
+use crate::node_api::{extract_node_id_cookie, get_last_seen_and_terminate_from_state};
 use axum::extract::ws::{Message, WebSocket};
 use axum::extract::{Path, WebSocketUpgrade};
 use axum::http::StatusCode;
@@ -15,31 +15,32 @@ use tracing::{debug, error};
 /// SDR parameters used to collect parameters for incoming node data from the request path.
 /// Data types are i16 and i64 since Postgresql and with it SQLx with Postgresql driver do not
 /// support unsigned values. i16 instead of i8 is used since Postgresql does not allow comparisons
-/// between CHAR and an integer and to   
+/// between CHAR and an integer.
+/// steps and ranges taken from https://hackrf.readthedocs.io/en/latest/faq.html#what-gain-controls-are-provided-by-hackrf
+/// Sample rate and frequency taken from https://hackrf.readthedocs.io/en/latest/hackrf_one.html
 #[derive(Debug, Deserialize, Serialize)]
 pub struct IncomingDataParameters {
-    // default node config taken from https://github.com/bastibl/webusb-libusb/blob/works/example/hackrf_open.cc#L161
-    // steps and ranges taken from https://hackrf.readthedocs.io/en/latest/faq.html#what-gain-controls-are-provided-by-hackrf
-    // Sample rate and frequency taken from https://hackrf.readthedocs.io/en/latest/hackrf_one.html
+    /// Which data type is received.
     pub data_type: DataTypeMarker,
-
-    // default: 2480000000 (2,48GHz)
-    // 1MHz to 6 GHz (1.000.000 - 6.000.000.000)
+    /// The frequency.
+    /// 1MHz to 6 GHz (1.000.000 - 6.000.000.000)
     pub freq: i64,
-    // default 1
-    // on or off (0 or 1)
+    /// Amplification on or off.
+    /// on or off (0 or 1)
     pub amp: i16,
-    // default: 32
-    // 0-40 in steps of 8
+    /// LNA
+    /// 0-40 in steps of 8
     pub lna: i16,
-    // default: 14
-    // 0-62 in steps of 2
+    /// VGA:
+    /// 0-62 in steps of 2
     pub vga: i16,
-    // default: 4000000 (4 Msps)
-    // 1 Msps to 20 Msps (million samples per second) (1000000 - 20000000)
+    /// The sample rate
+    /// 1 Msps to 20 Msps (million samples per second) (1000000 - 20000000)
     pub sample_rate: i64,
 }
 
+/// Handles a new data connection from a node. If no cookie with a node ID is found or no
+/// control worker corresponds to the node ID, a HTTP 400 status code is returned.
 pub async fn data_node_ws_handler(
     Extension(state): Extension<Arc<State>>,
     Path(node_sdr_parameters): Path<IncomingDataParameters>,
@@ -50,7 +51,7 @@ pub async fn data_node_ws_handler(
 
     let node_id = match extract_node_id_cookie(cookies) {
         Ok(node_id) => node_id,
-        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+        Err(_) => return (StatusCode::BAD_REQUEST, "No node ID").into_response(),
     };
 
     // Check if the control worker for this node id has connected before the data stream.
@@ -58,13 +59,22 @@ pub async fn data_node_ws_handler(
         let state_lock = state.nodes.lock().await;
         if !state_lock.contains_key(&node_id) {
             error!("Node without control worker connected tried to connect: {node_id}");
-            return StatusCode::BAD_REQUEST.into_response();
+            return (
+                StatusCode::BAD_REQUEST,
+                "No control worker with same node ID",
+            )
+                .into_response();
         }
     }
 
     ws.on_upgrade(move |socket| data_node_ws_loop(socket, node_id, node_sdr_parameters, state))
 }
 
+/// Receives data from nodes. Received data is stored in the database and, if at least one frontend
+/// is connected, send to all listing frontends via a broadcast channel.
+///
+/// # Panics
+/// If the broadcast channel sender returns an error.
 async fn data_node_ws_loop(
     mut socket: WebSocket,
     node_id: NodeId,
@@ -93,15 +103,11 @@ async fn data_node_ws_loop(
     // would be disconnected, the data worker would continue sending data as the connection is intact
     // and all connected frontends and the database would keep receiving data.
     // This would lead to "ghost" data as no control_worker is associated with the node.
-    let (last_seen_mutex, terminate_data) = {
-        let mut state_lock = state.nodes.lock().await;
-        if let Some(node) = state_lock.get_mut(&node_id) {
-            (node.last_seen.clone(), node.terminate_data.clone())
-        } else {
-            error!("Node vanished from HashMap while in use");
-            return;
-        }
-    };
+    let (last_seen_mutex, terminate_data) =
+        match get_last_seen_and_terminate_from_state(state.clone(), node_id).await {
+            Ok((last_seen_mutex, terminate_data)) => (last_seen_mutex, terminate_data),
+            Err(_) => return,
+        };
     debug!("Start receiving data from: {node_id}");
     while let Some(msg) = socket.recv().await {
         if *terminate_data.read().await {
@@ -116,18 +122,17 @@ async fn data_node_ws_loop(
                         *last_seen_lock = timestamp;
                     }
 
-                    {
-                        // `data_type as _` is described here: https://github.com/launchbadge/sqlx/issues/1004#issuecomment-764964043
-                        let NodeId(node_id_inner) = node_id;
-                        sqlx::query!(
+                    // `data_type as _` is described here: https://github.com/launchbadge/sqlx/issues/1004#issuecomment-764964043
+                    let NodeId(node_id_inner) = node_id;
+                    if let Err(e) =  sqlx::query!(
                             "INSERT INTO data_storage (node_id, data_type, freq, amp, lna, vga, sample_rate, timestamp, data) VALUES ($1, $2, $3, $4, $5 , $6, $7, $8, $9)", 
                             node_id_inner, node_sdr_parameters.data_type as _,
                                 node_sdr_parameters.freq, node_sdr_parameters.amp,
                                 node_sdr_parameters.lna, node_sdr_parameters.vga,
                                 node_sdr_parameters.sample_rate, timestamp, data)
                             .execute(&state.db_pool)
-                            .await
-                            .expect("Failed to insert data into database");
+                            .await {
+                        error!("Failed to insert data into database: {e}");
                     }
 
                     let data = Arc::new(data);
@@ -165,6 +170,8 @@ async fn data_node_ws_loop(
     }
 }
 
+/// Processes a newly connected data worker and returns a broadcast channel sender to which the
+/// received data should be sent.
 async fn process_data_node_connection(
     node_id: NodeId,
     data_type: DataTypeMarker,

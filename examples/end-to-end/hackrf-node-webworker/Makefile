@@ -1,4 +1,4 @@
-.PHONY: wasm wasm-debug wasm-profiling serve clean
+.PHONY: wasm wasm-debug wasm-profiling serve clean setup
 
 wasm:
 	# building in a temporary directory and moving to the dist directory is required since wasm-opt fails when trying to optimize "hackrf_open.wasm"
@@ -50,3 +50,5 @@ clean:
 	cd ../control_worker && \
 		make clean
 
+setup:
+	npm install

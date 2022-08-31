@@ -1,4 +1,4 @@
-.PHONY: wasm wasm-debug wasm-profiling serve clean
+.PHONY: wasm wasm-debug wasm-profiling serve clean setup
 
 wasm:
 	RUSTFLAGS='-C target-cpu=generic --cfg=web_sys_unstable_apis' wasm-pack build --target web --out-name frontend --out-dir ./dist --release
@@ -18,3 +18,6 @@ serve:
 clean:
 	cargo clean
 	rm -rf ./dist
+
+setup:
+	npm install

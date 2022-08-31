@@ -1,4 +1,4 @@
-.PHONY: backend-debug backend-release end-to-end clean
+.PHONY: backend-debug backend-release end-to-end clean setup
 
 backend-debug:
 	cargo run --debug
@@ -32,3 +32,8 @@ clean:
 	cd ../frontend && make clean
 	cd ../shared-utils && cargo clean
 	cargo clean
+
+setup:
+	cd ../hackrf-node-webworker && make setup
+	cd ../recorded-node-webworker && make setup
+	cd ../frontend && make setup

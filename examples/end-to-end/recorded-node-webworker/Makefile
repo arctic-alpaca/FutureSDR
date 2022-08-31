@@ -1,4 +1,4 @@
-.PHONY: wasm wasm-debug wasm-profiling serve clean
+.PHONY: wasm wasm-debug wasm-profiling serve clean setup
 
 wasm:
 	RUSTFLAGS='-C target-cpu=generic --cfg=web_sys_unstable_apis' wasm-pack build --target web --out-name recorded_node_webworker --out-dir ./dist --release
@@ -40,3 +40,6 @@ clean:
 		make clean
 	cd ../control_worker && \
 		make clean
+
+setup:
+	npm install

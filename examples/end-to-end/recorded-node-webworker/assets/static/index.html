@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>FutureSDR End-To-End HackRf-Node</title>
+    <title>FutureSDR End-To-End Recorded-Node</title>
     <link rel="stylesheet" href="/css/futuresdr.css">
     <link rel="shortcut icon" href="/favicon.png">
     <style>
@@ -100,7 +100,7 @@
 
     function process_node_id(node_id) {
         add_text_to_status_output("Node ID set to: " + node_id);
-        document.cookie = "node_id=" + node_id + "; expires=Thu, 31 Dec 2100 12:00:00 UTC; path=/node";
+        document.cookie = "node_id=" + node_id + "; expires=Thu, 31 Dec 2100 12:00:00 UTC; path=/";
     }
 
     var myLink = document.getElementById('start');

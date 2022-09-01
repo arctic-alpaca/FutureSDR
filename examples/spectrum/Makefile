@@ -1,8 +1,7 @@
 .PHONY: cpu vulkan wasm serve
 
 wasm:
-	RUSTFLAGS='-C target-cpu=generic --cfg=web_sys_unstable_apis' wasm-pack build --target web --out-name spectrum --out-dir ./dist-tmp --release #--dev
-	mv ./dist-tmp/* ./dist
+	RUSTFLAGS='-C target-cpu=generic --cfg=web_sys_unstable_apis' wasm-pack build --target web --out-name spectrum --out-dir ./dist--release #--dev
 	cd ../../frontend && make && ./gulp
 	./gulp
 	cd dist && ../serve.py

@@ -32,11 +32,14 @@ impl<T: Send + Sync + 'static> WasmWsSink<T> {
 
         let ws_error = Arc::new(RwLock::new(false));
         let ws_error_clone = ws_error.clone();
+        // Spawn the websocket sender task. If an error occurs, the `ws_error_clone` variable is set
+        // to true. This variable is checked in the processing and will return an error to any
+        // following processing attempt (call to `work`).
         spawn_local(async move {
             if let Ok(mut conn) = WebSocket::open(&url) {
                 while let Some(v) = receiver.next().await {
                     if let Err(error) = conn.send(Message::Bytes(v)).await {
-                        // On error, try to reconnect or panic.
+                        // On error, set `ws_error` to true.
                         match error {
                             ConnectionError => {
                                 *ws_error_clone.write().expect("Lock is poisoned") = true;
@@ -85,12 +88,15 @@ impl<T: Send + Sync + 'static> Kernel for WasmWsSink<T> {
         _mio: &mut MessageIo<Self>,
         _meta: &mut BlockMeta,
     ) -> Result<()> {
+        // Check whether an error has occurred in the websocket task before this call to `work`.
         if *self.ws_error.read().expect("Lock is poisoned") {
             anyhow::bail!("WebSocket Error");
         }
         let i = sio.input(0).slice::<u8>();
         debug_assert_eq!(i.len() % size_of::<T>(), 0);
 
+        // The frontend requires 2048 f32 values per receive. We only produce multiple of 2048 to
+        // satisfy this constraint.
         let items_to_process_per_run = 2048;
 
         if i.is_empty() {
@@ -104,16 +110,20 @@ impl<T: Send + Sync + 'static> Kernel for WasmWsSink<T> {
         let mut v = Vec::new();
         let item_size = size_of::<T>();
         let items = i.len() / item_size;
+        // Do not process data until at least `items_to_process_per_run` are in the input buffer.
         if items_to_process_per_run <= items {
             v.extend_from_slice(&i[0..(items_to_process_per_run * (item_size / size_of::<u8>()))]);
             sio.input(0).consume(items_to_process_per_run);
         }
 
+        // If there are at least `items_to_process_per_run` items still remaining in the input buffer
+        // set `call_again`.
         if (items - items_to_process_per_run) >= items_to_process_per_run {
             io.call_again = true;
         }
         if !v.is_empty() {
             self.data_storage.append(&mut v);
+            // Send data only if the `iterations_per_send` is reached.
             if self.data_storage.len()
                 >= items_to_process_per_run
                     * self.iterations_per_send

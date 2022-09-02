@@ -19,7 +19,7 @@ fn extract_node_id_cookie(cookies: Cookies) -> anyhow::Result<NodeId> {
         Ok(NodeId(node_id_uuid))
     } else {
         error!("No cookie \"node_id\"");
-        anyhow::bail!("No cookie \"node_id\"");
+        bail!("No cookie \"node_id\"");
     }
 }
 

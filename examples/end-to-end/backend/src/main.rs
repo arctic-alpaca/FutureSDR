@@ -38,7 +38,7 @@ lazy_static! {
             data_types,
         }
     };
-    /// Addres to which the backend should bind
+    /// Address to which the backend should bind
     static ref BIND_ADDR: SocketAddr = SocketAddr::from(([127, 0, 0, 1], 3000));
 }
 

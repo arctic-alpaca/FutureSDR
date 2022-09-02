@@ -196,18 +196,6 @@
     async function update_from_backend() {
         await wasm_module_functions.update_from_backend()
     }
-
-    function send_config1(){
-        if(typeof wasm_module_functions.generate_uuid === 'function') {
-            let node_id = wasm_module_functions.generate_uuid();
-            console.log("Generated Node ID: " + node_id);
-            document.getElementById("node_id").value = node_id;
-            process_node_id(node_id);
-        } else {
-            console.log("Not loaded yet, please try again in a moment");
-        }
-        document.getElementById("node_id").value = node_id;
-    }
 </script>
 
 <script type="module">
@@ -219,10 +207,6 @@
 
     async function send_config() {
         await send_config_rust();
-    }
-
-    function Sleep(milliseconds) {
-        return new Promise(resolve => setTimeout(resolve, milliseconds));
     }
 
     const rustWasm = await init();

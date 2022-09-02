@@ -1,5 +1,7 @@
 use crate::application::{NodeControlConnection, NodeId, NodeState, State};
-use crate::node_api::{extract_node_id_cookie, get_last_seen_and_terminate_from_state};
+use crate::node_api::{
+    extract_node_id_cookie, get_last_seen_and_terminate_from_state, update_last_seen,
+};
 use crate::DEFAULT_NODE_CONFIG;
 use axum::extract::ws::{Message, WebSocket};
 use axum::extract::WebSocketUpgrade;
@@ -86,10 +88,17 @@ async fn control_node_ws_loop(socket: WebSocket, node_id: NodeId, state: Arc<Sta
         }
     });
 
-    tokio::spawn(update_last_seen(state.clone(), node_id));
+    let (last_seen_mutex, _) =
+        match get_last_seen_and_terminate_from_state(state.clone(), node_id).await {
+            Ok((last_seen_mutex, terminate_data)) => (last_seen_mutex, terminate_data),
+            Err(_) => return,
+        };
+
+    tokio::spawn(update_last_seen_task(state.clone(), node_id));
 
     while let Some(msg) = ws_receiver.next().await {
         if let Ok(msg) = msg {
+            update_last_seen(&last_seen_mutex, chrono::Utc::now()).await;
             match msg {
                 Message::Binary(v) => match bincode::deserialize::<NodeToBackend>(&v) {
                     Ok(NodeToBackend::AckConfig { config }) => {
@@ -137,7 +146,7 @@ async fn control_node_ws_loop(socket: WebSocket, node_id: NodeId, state: Arc<Sta
 /// Every second the `last_seen` member of the node is checked and the config_storage is updated if
 /// it changed in that time. This tasks checks `terminate_data` every run to check whether it should
 /// terminate too.
-async fn update_last_seen(state: Arc<State>, node_id: NodeId) {
+async fn update_last_seen_task(state: Arc<State>, node_id: NodeId) {
     let (last_seen_mutex, terminate_data) =
         match get_last_seen_and_terminate_from_state(state.clone(), node_id).await {
             Ok((last_seen_mutex, terminate_data)) => (last_seen_mutex, terminate_data),

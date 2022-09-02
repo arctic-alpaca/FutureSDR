@@ -1,5 +1,7 @@
 use crate::application::{NodeId, State};
-use crate::node_api::{extract_node_id_cookie, get_last_seen_and_terminate_from_state};
+use crate::node_api::{
+    extract_node_id_cookie, get_last_seen_and_terminate_from_state, update_last_seen,
+};
 use axum::extract::ws::{Message, WebSocket};
 use axum::extract::{Path, WebSocketUpgrade};
 use axum::http::StatusCode;
@@ -47,7 +49,7 @@ pub async fn data_node_ws_handler(
     cookies: Cookies,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
-    debug!("node data connected");
+    debug!("Processor worker connected");
 
     let node_id = match extract_node_id_cookie(cookies) {
         Ok(node_id) => node_id,
@@ -91,7 +93,7 @@ async fn data_node_ws_loop(
     };
 
     // Counter to reduce the amount of output when debugging.
-    //#[cfg(debug_assertions)]
+    #[cfg(feature = "incoming_data_counter")]
     let mut counter = 0;
 
     // Use an Arc to the last_seen value to prevent locking the whole node state structure
@@ -99,8 +101,8 @@ async fn data_node_ws_loop(
     // We can't hold the last_seen lock the whole time since data from multiple connections of
     // one node can come in and the control connection also modifies last_seen.
     // `terminate_data` is used to clean up all data streams as removing the channels from the storage
-    // does not terminate active channels. If only the control worker but not the data worker
-    // would be disconnected, the data worker would continue sending data as the connection is intact
+    // does not terminate active channels. If only the control worker but not the processor worker
+    // would be disconnected, the processor worker would continue sending data as the connection is intact
     // and all connected frontends and the database would keep receiving data.
     // This would lead to "ghost" data as no control_worker is associated with the node.
     let (last_seen_mutex, terminate_data) =
@@ -117,10 +119,7 @@ async fn data_node_ws_loop(
             match msg {
                 Message::Binary(data) => {
                     let timestamp = chrono::Utc::now();
-                    {
-                        let mut last_seen_lock = last_seen_mutex.lock().await;
-                        *last_seen_lock = timestamp;
-                    }
+                    update_last_seen(&last_seen_mutex, timestamp).await;
 
                     // `data_type as _` is described here: https://github.com/launchbadge/sqlx/issues/1004#issuecomment-764964043
                     let NodeId(node_id_inner) = node_id;
@@ -146,31 +145,31 @@ async fn data_node_ws_loop(
                             .expect("Broadcast channel send failed. This can't happen.");
                     }
 
-                    // #[cfg(debug_assertions)]
+                    #[cfg(feature = "incoming_data_counter")]
                     {
                         counter += 1;
                         if counter >= 100 {
-                            debug!("Data worker sent data: {}", node_id);
+                            debug!("Processor worker sent data: {}", node_id);
                             counter = 0;
                         }
                     }
                 }
                 Message::Close(_) => {
-                    debug!("Data worker client disconnected: {}", node_id);
+                    debug!("Processor worker client disconnected: {}", node_id);
                     return;
                 }
                 _ => {
-                    error!("Data worker behaved unexpectedly");
+                    error!("Processor worker behaved unexpectedly");
                 }
             }
         } else {
-            debug!("Data worker disconnected unexpectedly: {}", node_id);
+            debug!("Processor worker disconnected unexpectedly: {}", node_id);
             return;
         }
     }
 }
 
-/// Processes a newly connected data worker and returns a broadcast channel sender to which the
+/// Processes a newly connected processor worker and returns a broadcast channel sender to which the
 /// received data should be sent.
 async fn process_data_node_connection(
     node_id: NodeId,
@@ -196,7 +195,7 @@ async fn process_data_node_connection(
             }
         } else {
             let error_msg = format!(
-                "New data worker connected without corresponding control worker: {node_id}"
+                "New processor worker connected without corresponding control worker: {node_id}"
             );
             error!(error_msg);
             anyhow::bail!(error_msg);

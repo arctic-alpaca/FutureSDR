@@ -1,6 +1,6 @@
 /// Control worker API methods.
 pub(crate) mod control;
-/// Data worker API methods.
+/// Processor worker API methods.
 pub(crate) mod data;
 
 use crate::application::{NodeId, State};
@@ -35,5 +35,13 @@ async fn get_last_seen_and_terminate_from_state(
         let error_msg = "Node vanished from HashMap while in use";
         error!(error_msg);
         bail!("Node vanished from HashMap while in use");
+    }
+}
+
+/// Update the `last_seen` value behind the `last_seen_mutex` to the current time.
+async fn update_last_seen(last_seen_mutex: &Arc<Mutex<DateTime<Utc>>>, timestamp: DateTime<Utc>) {
+    {
+        let mut last_seen_lock = last_seen_mutex.lock().await;
+        *last_seen_lock = timestamp;
     }
 }

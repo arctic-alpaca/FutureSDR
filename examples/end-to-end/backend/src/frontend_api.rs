@@ -36,7 +36,7 @@ pub async fn frontend_data_api_ws_handler(
     }
 }
 
-/// Process fft data before sending it to the frontend. The frontend currently only accepts chunkgs
+/// Process fft data before sending it to the frontend. The frontend currently only accepts chunks
 /// of 2048 `f32` values and panics if the data does not conform to that.
 async fn process_fft_data(data: Arc<Vec<u8>>, socket: &mut WebSocket) -> anyhow::Result<()> {
     let chunks_vec: Vec<Result<Message, _>> = data

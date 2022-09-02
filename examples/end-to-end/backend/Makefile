@@ -23,7 +23,7 @@ end-to-end:
 	mv serve/frontend/favicon.png serve/favicon.png
 	mv serve/frontend/css/* serve/css
 	./scripts/init_db.sh
-	cargo run --release
+	cargo run --release --features incoming_data_counter
 
 clean:
 	rm -rf serve

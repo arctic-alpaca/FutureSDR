@@ -11,7 +11,7 @@ pub mod keep_1_in_n;
 pub mod wasm;
 
 use gloo_worker::{HandlerId, Worker, WorkerScope};
-use shared_utils::{DataTypeConfig, ToDataWorker};
+use shared_utils::{DataTypeConfig, ToProcessorWorker};
 use wasm_bindgen_futures::spawn_local;
 
 #[cfg(feature = "include_main")]
@@ -30,7 +30,7 @@ pub struct FftWorker {
 impl Worker for FftWorker {
     type Message = ();
 
-    type Input = ToDataWorker;
+    type Input = ToProcessorWorker;
 
     type Output = ();
 
@@ -44,14 +44,14 @@ impl Worker for FftWorker {
 
     fn received(&mut self, _scope: &WorkerScope<Self>, msg: Self::Input, _who: HandlerId) {
         match msg {
-            ToDataWorker::Data { data } => {
+            ToProcessorWorker::Data { data } => {
                 if self.is_initialized {
                     spawn_local(async move {
                         futuresdr::blocks::wasm_sdr::push_samples(data).await;
                     });
                 }
             }
-            ToDataWorker::ApplyConfig { config } => {
+            ToProcessorWorker::ApplyConfig { config } => {
                 if let Some(DataTypeConfig::Fft {
                     fft_chunks_per_ws_transfer,
                 }) = config.data_types.get(&Fft)

@@ -10,7 +10,7 @@ use fft_worker::FftWorker;
 use gloo_worker::Spawnable;
 use gloo_worker::WorkerBridge;
 use shared_utils::{
-    DataTypeMarker, FromControlWorkerMsg, NodeConfig, ToControlWorkerMsg, ToDataWorker,
+    DataTypeMarker, FromControlWorkerMsg, NodeConfig, ToControlWorkerMsg, ToProcessorWorker,
 };
 use std::cell::RefCell;
 use std::io::Cursor;
@@ -79,12 +79,12 @@ extern "C" {
     fn set_sample_rate_from_rust(sample_rate: u64);
 }
 
-/// Takes the input samples and sends them to every active data worker.
+/// Takes the input samples and sends them to every active processor worker.
 #[wasm_bindgen]
 pub fn input_samples(samples: Vec<i8>) {
     FFT_WORKER.with(|bridge| {
         if let Some(bridge) = bridge.borrow_mut().as_ref() {
-            bridge.send(ToDataWorker::Data {
+            bridge.send(ToProcessorWorker::Data {
                 data: samples.clone(),
             });
         }
@@ -92,8 +92,8 @@ pub fn input_samples(samples: Vec<i8>) {
     // Add data input for more workers here
 }
 
-/// Stops all data workers.
-pub fn stop_data_workers() {
+/// Stops all processor workers.
+pub fn stop_processor_workers() {
     // Replacing the FFT_WORKER content drops the WorkerBridge with terminates the worker.
     FFT_WORKER.with(|inner| {
         inner.replace(None);
@@ -102,21 +102,21 @@ pub fn stop_data_workers() {
 }
 
 /// Stops the control worker.
-pub fn stop_control_workers() {
+pub fn stop_control_worker() {
     CONTROL_WORKER.with(|inner| {
         inner.replace(None);
     });
 }
 
-/// Starts data workers according to `node_config`
-pub fn start_data_workers(node_config: &NodeConfig) {
+/// Starts processor workers according to `node_config`
+pub fn start_processor_workers(node_config: &NodeConfig) {
     for entry in node_config.data_types.keys() {
         match entry {
             DataTypeMarker::Fft => {
                 FFT_WORKER.with(|inner| {
                     inner.replace(Some(FftWorker::spawner().spawn("fft_worker.js")));
                     if let Some(bridge) = &*inner.borrow_mut() {
-                        bridge.send(ToDataWorker::ApplyConfig {
+                        bridge.send(ToProcessorWorker::ApplyConfig {
                             config: node_config.clone(),
                         });
                     }
@@ -130,9 +130,9 @@ pub fn start_data_workers(node_config: &NodeConfig) {
 
 /// Applies the `node_config` to the node.
 /// Sets SDR config.
-/// Starts appropriate data workers and configures them.
+/// Starts appropriate processor workers and configures them.
 pub fn apply_config(node_config: NodeConfig) {
-    stop_data_workers();
+    stop_processor_workers();
 
     set_freq_from_rust(node_config.sdr_config.freq);
     set_amp_from_rust(node_config.sdr_config.amp);
@@ -140,7 +140,7 @@ pub fn apply_config(node_config: NodeConfig) {
     set_vga_from_rust(node_config.sdr_config.vga);
     set_sample_rate_from_rust(node_config.sdr_config.sample_rate);
 
-    start_data_workers(&node_config);
+    start_processor_workers(&node_config);
 }
 
 /// Restarts the control worker and initializes it.
@@ -174,12 +174,12 @@ pub fn create_control_worker() {
             }
             FromControlWorkerMsg::Terminate { msg } => {
                 print_from_rust(&msg);
-                stop_data_workers();
-                stop_control_workers();
+                stop_processor_workers();
+                stop_control_worker();
             }
             FromControlWorkerMsg::Disconnected => {
-                stop_control_workers();
-                stop_data_workers();
+                stop_control_worker();
+                stop_processor_workers();
                 print_from_rust(
                     "No connection to backend, restarting workers after 10 seconds to reconnect",
                 );

@@ -1,9 +1,9 @@
 use crate::NodeConfig;
 use serde::{Deserialize, Serialize};
 
-/// Used to communicate from the node Main/UI-thread to the data workers.
+/// Used to communicate from the node Main/UI-thread to the processor workers.
 #[derive(Debug, Deserialize, Serialize)]
-pub enum ToDataWorker {
+pub enum ToProcessorWorker {
     /// Apply this configuration to the worker.
     ApplyConfig {
         /// The configuration to apply.
